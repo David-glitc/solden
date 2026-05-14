@@ -114,3 +114,7 @@
 
 ## 2026-05-14 — Panel copy: end-user friendly status (no CPU line)
 - **`static/index.html`:** Status bar hides **runtime / CPU / region / worker-cap** strings; short **plain-language** ready and error lines. Hero, stat cards, form labels, hints, and errors reworded for non-technical readers; **Troubleshooting log** (was Technical diagnostics); throughput uses **parallel lanes**; **Start search** button; page title and accuracy copy softened.
+
+## 2026-05-14 — `src/` layout; root entry shims
+- **Moved:** application modules to **`src/`** (`main`, `worker`, `grind`, `db`, `crypto`, `log`, `runtime`, `types`, `webgpu_env`, `decrypt`). **Repo root** keeps thin **`main.ts`** / **`decrypt.ts`** that `import "./src/…"` so **`deno run main.ts`**, **`deno task`**, and Deno Deploy default entry stay on familiar paths.
+- **`src/main.ts`:** loads **`../static/index.html`** and **`../static/solden-mark.svg`**. **`deno task check`** typechecks root shims + all **`src/*.ts`**. **`README.md`** layout table updated.

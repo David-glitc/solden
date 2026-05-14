@@ -35,21 +35,22 @@ Copy-paste markup (tweak `width` / `height` / `fill` as needed):
 
 | Path | Role |
 |------|------|
-| [`main.ts`](main.ts) | CLI + HTTP server entry (`--server`, `POST /grind`, static panel, SSE, `/system`) |
-| [`worker.ts`](worker.ts) | Worker thread / worker module (keygen loop, progress) |
-| [`grind.ts`](grind.ts) | Orchestrates workers, encryption option, aggregates progress |
-| [`db.ts`](db.ts) | SQLite / Deno KV / ephemeral no-op persistence |
-| [`runtime.ts`](runtime.ts) | Cross-runtime I/O (`serveHttp`, workers, append files) |
-| [`crypto.ts`](crypto.ts) | Optional AES-GCM encryption of secrets |
-| [`log.ts`](log.ts) | Structured logs + optional SSE broadcast hook |
-| [`types.ts`](types.ts) | Shared TypeScript types |
-| [`webgpu_env.ts`](webgpu_env.ts) | WebGPU probe (Deno local; grind stays CPU) |
-| [`decrypt.ts`](decrypt.ts) | Standalone decrypt helper for encrypted CLI hits |
-| [`static/index.html`](static/index.html) | Control panel (served at `GET /`) |
-| [`static/solden-mark.svg`](static/solden-mark.svg) | Logo / favicon source file |
+| [`main.ts`](main.ts) | **Entry shim** — imports [`src/main.ts`](src/main.ts) (keeps `deno run main.ts` and Deno Deploy default entry at repo root) |
+| [`decrypt.ts`](decrypt.ts) | **CLI shim** — imports [`src/decrypt.ts`](src/decrypt.ts) |
+| [`src/main.ts`](src/main.ts) | CLI + HTTP server (`--server`, `POST /grind`, panel paths, `/system`) |
+| [`src/worker.ts`](src/worker.ts) | Worker module (keygen loop, progress) |
+| [`src/grind.ts`](src/grind.ts) | Worker orchestration, encryption option, aggregates |
+| [`src/db.ts`](src/db.ts) | SQLite / Deno KV / ephemeral no-op persistence |
+| [`src/runtime.ts`](src/runtime.ts) | Cross-runtime I/O (`serveHttp`, workers, append files) |
+| [`src/crypto.ts`](src/crypto.ts) | AES-GCM helpers |
+| [`src/log.ts`](src/log.ts) | Structured logs + optional SSE hook |
+| [`src/types.ts`](src/types.ts) | Shared TypeScript types |
+| [`src/webgpu_env.ts`](src/webgpu_env.ts) | WebGPU probe (Deno local) |
+| [`static/index.html`](static/index.html) | Control panel (`GET /`) |
+| [`static/solden-mark.svg`](static/solden-mark.svg) | Logo / favicon file on disk |
 | [`benchmarks/`](benchmarks/) | `deno bench` targets |
-| [`deno.json`](deno.json) | Deno tasks, unstable KV flag |
-| [`package.json`](package.json) | Optional Node/Bun npm scripts (paths match repo root) |
+| [`deno.json`](deno.json) | Tasks, unstable KV |
+| [`package.json`](package.json) | Optional Node/Bun npm scripts |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Dated implementation notes |
 
 ---
