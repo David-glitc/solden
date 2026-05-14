@@ -30,7 +30,7 @@
 - `/system` + UI: `getSystemInfo()` hardened for Deno Deploy (explicit `environment`, no host RAM), full try/catch; optional CORS via `ACCESS_CONTROL_ALLOW_ORIGIN`; UI uses `data-api-base`, checks `fetch` HTTP status, 12s timeout, and always updates Machine card on failure (grind uses same API base). Footer: David Pere, davidpere.vercel.app.
 - Deno Deploy: `LOG_LEVEL` defaults to `info` when unset (same as local); use `LOG_VERBOSE=1` or `-v` for more detail.
 - Added `.env.example` (Deno Deploy / local env hints for https://solden.atomiclabs.cc/); `.gitignore` includes `.env`.
-- Branding: `logo.svg` + `brand.ts` (`LOGO_SVG`), header mark, `/favicon.svg` + `/favicon.ico`, footer source link https://github.com/David-glitc/solden
+- Branding: canonical **`static/solden-mark.svg`** (served as **`/favicon.svg`**, **`/favicon.ico`**, **`/solden-mark.svg`** via cached read in `main.ts`), header mark in panel, footer source link https://github.com/David-glitc/solden
 - Machine + header: HTML embeds `__VANITY_SYSTEM_BOOT_JSON__` replaced at `GET /` with `getSystemInfo()` so the card is filled without relying on `fetch(/system)` alone; Machine **Refresh** button; header gradient, kicker, Live pill; fetch uses `cache: no-store`; failed refresh does not wipe boot snapshot.
 - UI: removed Machine card and boot JSON; `GET /` serves static `UI_HTML` again. Grind form uses `pickInt`/`pickFloat` + client check for prefix/suffix; SSE JSON guarded; POST body clamped on server. Hint clarifies only prefix/suffix required.
 
@@ -64,7 +64,7 @@
 ## 2026-05-14 — Static panel HTML + grind button fix
 - **Root cause:** the inline `UI_HTML` script lost `if (startBtn) startBtn.onclick = async function() {`, so the browser hit a **syntax error** and never bound the button (no fetch).
 - **Panel:** `static/index.html` is served for **`GET /`** and **`GET /index.html`** (`getControlPanelHtml()` in `main.ts`, cached per process). Edit that file directly; no TS template literal.
-- **`ui.ts` removed** (was only `UI_HTML`). Logo in header uses **`/favicon.svg`**.
+- **`ui.ts` removed** (was only `UI_HTML`). Logo in header uses **`/solden-mark.svg`**.
 - On **Deno**, raise workers with CLI **`-t` / `--threads`** and optional cap **`-m` / `--max-workers`** (`-B` Bun oversubscribe is Bun-only, ignored on Deno).
 - **UI:** boot `GET /system` logs `Backend /grind runs on: runtime=…` so you can confirm Deno vs Bun; hint text explains browser vs server.
 
@@ -95,3 +95,22 @@
 
 ## 2026-05-14 — Panel UI refresh (accessibility + dark mode)
 - **`static/index.html`:** skip link, **`<main id="main">`**, **`color-scheme: light dark`** with **`prefers-color-scheme: dark`** tokens; accent stripe on stat cards; server status **dot** via **`data-state`** + **`#serverBarText`**; fieldsets for Pattern / Run / Performance / Options; **`for=`** labels; **`aria-live`** on stats and progress, **`aria-busy`** on grind card; **`setServerState`**, error/results **scrollIntoView**; fixed **`??`** regressions in progress handler; diagnostics **`<pre>`** framed; reduced-motion overrides.
+
+## 2026-05-14 — Panel: client request clock vs server final wall
+- **`static/index.html`:** While **`clientGrindActive`**, throughput uses **browser elapsed** for avg keys/s and the subtitle **`…s request`** (250 ms tick + last progress snapshot); **`wallElapsedSec`** from SSE/NDJSON is used only when **not** in a local grind. **Final** toast, banner, and **`setGrindElapsedBanner`** prefer **`wallElapsedSec`** on NDJSON **`done`**, else **`x-grind-wall-ms`** on the JSON grind response, else client RTT.
+- **`main.ts`:** NDJSON **`done`** includes **`wallElapsedSec`** (from **`grindWall0`**). Non-NDJSON **`POST /grind`** returns JSON with header **`x-grind-wall-ms`** (grind wall ms).
+
+## 2026-05-14 — Panel: diagnostics contrast, wall time, Deploy cap in bar
+- **`static/index.html`:** Diagnostics **`<pre>`** uses a fixed **high-contrast** palette (`.diag-log`, not `var(--muted)`/`var(--surface)`); **Clear log** / **Copy log**; **`#grindElapsedBanner`** under Results shows **wall time** after a successful grind; success **toast** includes **`formatGrindClock`**; first NDJSON **`started`** line can log **`appliedThreads`**, **`appliedMaxWorkers`**, **`deployWorkerCap`**; **`/system`** status text includes **Deploy worker cap** when the JSON field is present.
+- **`main.ts`:** **`POST /grind`** empty prefix/suffix check uses **`go`** (before **`goForGrind`** is declared); Deploy serialization / worker cap behavior unchanged from prior commit.
+
+## 2026-05-14 — HTTP prod: ephemeral hits, lighter SSE/NDJSON on Deploy
+- **`db.ts`:** **`createEphemeralDb()`** — no-op **`saveHits`**, empty **`getHits`** (no KV/SQLite open).
+- **`main.ts`:** **`httpUsesEphemeralHits()`** — default on **Deno Deploy** (no **`VANITY_HTTP_PERSIST_HITS`**); any host with **`VANITY_HTTP_EPHEMERAL=1`** skips persist. **`/system`** includes **`httpEphemeralHits`**. Deploy: smaller **SSE log ring**, **`http_grind_pulse`** omitted from the ring unless **`VANITY_SSE_LOG_PULSE=1`**; **SSE + NDJSON progress** coalesced to at most ~**`uiRefreshMs`** (120–2000 ms cap) per request to cut wire and encode work.
+
+## 2026-05-14 — Repo layout, README, single SVG asset
+- **Removed:** duplicate **`logo.svg`** (root), unused **`logo.ts`**, in-repo **`brand.ts`** (`LOGO_SVG` inlined in TS). **Added:** **`static/solden-mark.svg`** as the only on-disk mark; **`main.ts`** reads it via **`readTextFromModuleUrl`** (shared with the control panel HTML) and caches **`getSoldMarkSvg()`** for **`/favicon.svg`**, **`/favicon.ico`**, **`/solden-mark.svg`**.
+- **`README.md`:** Full usage (Deno/Bun/Node), API table, env vars, embedded SVG for copy-paste, repo file table. **`package.json`** scripts now point at repo-root **`main.ts`** / **`decrypt.ts`**. **`.gitignore`:** default DB/KV/JSONL artifacts. **`deno task check`** widened to core modules. **`.env.example`:** Deploy-related **`VANITY_*`** placeholders. Panel favicon + hero image use **`/solden-mark.svg`**.
+
+## 2026-05-14 — Panel copy: end-user friendly status (no CPU line)
+- **`static/index.html`:** Status bar hides **runtime / CPU / region / worker-cap** strings; short **plain-language** ready and error lines. Hero, stat cards, form labels, hints, and errors reworded for non-technical readers; **Troubleshooting log** (was Technical diagnostics); throughput uses **parallel lanes**; **Start search** button; page title and accuracy copy softened.

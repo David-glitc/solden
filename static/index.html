@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0a" />
     <meta name="color-scheme" content="light dark" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
-    <link rel="apple-touch-icon" href="/favicon.svg" />
-    <title>Solden · Sol vanity</title>
+    <link rel="icon" href="/solden-mark.svg" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="/solden-mark.svg" />
+    <title>Solden · Custom Solana address</title>
     <style>
          :root {
             --ink: #0a0a0a;
@@ -637,6 +637,8 @@
         
         details.diag-card {
             margin-top: 16px;
+            color-scheme: light;
+            overflow: visible;
         }
         
         details.diag-card summary {
@@ -706,20 +708,6 @@
 
         .results-card h3 {
             margin-bottom: 14px;
-        }
-        
-        #diagLog {
-            margin: 0;
-            max-height: 200px;
-            overflow: auto;
-            font-size: 0.78rem;
-            color: var(--muted);
-            white-space: pre-wrap;
-            word-break: break-word;
-            padding: 12px;
-            background: var(--surface);
-            border-radius: var(--radius-md);
-            border: 1px solid var(--line);
         }
 
         @media (prefers-color-scheme: dark) {
@@ -844,6 +832,45 @@
                 width: auto;
             }
         }
+
+        /* Technical diagnostics: log panel fixed light-on-slate (not theme variables) */
+        .diag-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .diag-log,
+        #diagLog.diag-log {
+            margin: 0;
+            max-height: 260px;
+            overflow: auto;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+            padding: 12px 14px;
+            background: #0f172a !important;
+            color: #e2e8f0 !important;
+            border: 1px solid #334155 !important;
+            border-radius: 10px;
+            font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+        }
+
+        .grind-elapsed {
+            margin: 0 0 14px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .grind-elapsed {
+                color: #cbd5e1;
+            }
+        }
     </style>
 </head>
 
@@ -854,36 +881,36 @@
             <div class="brand-lockup">
                 <div class="brand-mark">
                     <div class="brand-mark-inner">
-                        <img src="/favicon.svg" width="56" height="56" alt="Solden logo" decoding="async" />
+                        <img src="/solden-mark.svg" width="56" height="56" alt="Solden logo" decoding="async" />
                     </div>
                 </div>
                 <div class="brand-copy">
                     <p class="brand-kicker">Solden</p>
-                    <h1>Sol vanity</h1>
-                    <p class="brand-desc">Fast Solana vanity addresses on your own server—no local GPU farm required. Match a prefix, suffix, or both.</p>
+                    <h1>Custom Solana address</h1>
+                    <p class="brand-desc">Create a custom Solana wallet address from your browser—pick letters at the start or end of the address. No app install required.</p>
                 </div>
-                <span class="header-pill" title="Served from this host; /grind uses the same origin unless API base is set">Live</span>
+                <span class="header-pill" title="This page talks to the same site that runs your search">Online</span>
             </div>
         </header>
 
         <div id="serverBar" class="server-bar" role="status" data-state="pending">
-            <span id="serverBarText" class="server-bar__text">Connecting…</span>
+            <span id="serverBarText" class="server-bar__text">Checking connection…</span>
         </div>
         <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
         <div class="grid" id="liveStatsRegion" aria-live="polite" aria-relevant="text">
             <div class="card card--stat" id="cardThroughput">
-                <h3>Throughput</h3>
+                <h3>Speed</h3>
                 <div id="throughputLive" class="live-big mono">—</div>
-                <div id="throughputSub" class="stat-sub">Instant sum and wall-clock average (NDJSON stream + SSE)</div>
+                <div id="throughputSub" class="stat-sub">Peak speed and average while searching</div>
             </div>
             <div class="card card--stat" id="cardDifficulty">
-                <h3>Difficulty</h3>
+                <h3>Search size</h3>
                 <div id="difficulty" class="mono body">—</div>
-                <div class="stat-sub">ETA from pattern length and live keys/s</div>
+                <div class="stat-sub">Rough wait time from pattern length and live speed</div>
             </div>
             <div class="card card--stat" id="cardBest">
-                <h3>Best candidate</h3>
+                <h3>Closest match</h3>
                 <div id="bestScoreLive" class="live-big mono">—</div>
                 <div id="accuracy" class="mono stat-sub">—</div>
             </div>
@@ -891,8 +918,8 @@
 
         <div class="card grind-card" id="grindCard" style="margin-top:18px" aria-labelledby="grindHeading">
             <div class="card-heading">
-                <h3 id="grindHeading">Grind</h3>
-                <p class="card-lead">Work runs on the server. Progress streams on the POST response; logs and extras may use SSE.</p>
+                <h3 id="grindHeading">Create your address</h3>
+                <p class="card-lead">The heavy work happens on the server in the background. Watch the cards above for live speed and how close the best match is.</p>
             </div>
             <fieldset class="field-group">
                 <legend class="field-legend">Pattern</legend>
@@ -905,28 +932,28 @@
                 <legend class="field-legend">Run</legend>
                 <div class="row">
                     <div><label for="count" title="How many matching addresses to find this run">Count</label><input id="count" type="number" min="1" value="1" /></div>
-                    <div><label for="threads" title="Parallel worker processes on the server">Threads</label><input id="threads" type="number" min="1" value="16" /></div>
-                    <div><label for="threshold" title="Emit near-miss events when score ≥ this %">Threshold %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
+                    <div><label for="threads" title="Higher can be faster; the default works well for most people">Parallel lanes</label><input id="threads" type="number" min="1" value="16" /></div>
+                    <div><label for="threshold" title="Show “almost matched” updates when the match is at least this strong">Near-match %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
                 </div>
             </fieldset>
             <fieldset class="field-group">
-                <legend class="field-legend">Performance</legend>
+                <legend class="field-legend">Optional speed tuning</legend>
                 <div class="row">
-                    <div><label for="progressEvery" title="Each worker sends progress every N key tries (lower = snappier UI)">Progress every</label><input id="progressEvery" type="number" min="64" value="512" /></div>
-                    <div><label for="uiRefreshMs" title="Server-side UI refresh hint (CLI)">UI refresh ms</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
-                    <div><label for="maxWorkers" title="Maximum parallel workers this run">Max workers</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
+                    <div><label for="progressEvery" title="Lower = more frequent updates (smoother bar, a bit more traffic)">Progress step</label><input id="progressEvery" type="number" min="64" value="512" /></div>
+                    <div><label for="uiRefreshMs" title="How often the server may refresh progress (milliseconds)">Update spacing (ms)</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
+                    <div><label for="maxWorkers" title="Safety cap on parallel lanes for this search">Max parallel lanes</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
                 </div>
             </fieldset>
             <fieldset class="field-group">
                 <legend class="field-legend">Options</legend>
                 <div class="checks">
-                    <label title="Match exact character case for prefix/suffix"><input id="caseSensitive" type="checkbox" /> Case-sensitive</label>
-                    <label title="Return secret key encrypted; you will need the decrypt key shown in results"><input id="encrypt" type="checkbox" /> Encrypt keys</label>
-                    <label title="Deno local: ask server to probe WebGPU (keygen stays on CPU)"><input id="useWebgpu" type="checkbox" /> Probe WebGPU</label>
+                    <label title="Match uppercase and lowercase exactly for prefix and suffix"><input id="caseSensitive" type="checkbox" /> Match exact letter case</label>
+                    <label title="Protect your secret key with a password—you will see a separate unlock key in the results"><input id="encrypt" type="checkbox" /> Encrypt my secret key</label>
+                    <label title="Advanced: ask the server to check for GPU support (search still runs the usual way)"><input id="useWebgpu" type="checkbox" /> Check for GPU support</label>
                 </div>
             </fieldset>
             <div class="grind-actions">
-                <button type="button" id="startBtn">Start grind</button>
+                <button type="button" id="startBtn">Start search</button>
                 <button type="button" id="cancelGrindBtn" disabled>Cancel</button>
                 <div id="grindProgress" class="grind-progress" hidden aria-live="polite">
                     <span class="spinner" aria-hidden="true"></span>
@@ -934,11 +961,12 @@
                     <span id="grindProgressLabel">Searching…</span>
                 </div>
             </div>
-            <p class="hint-short">Set at least a <strong>prefix</strong> or <strong>suffix</strong>. Hover labels for tips.</p>
+            <p class="hint-short">Add a <strong>prefix</strong> (start), a <strong>suffix</strong> (end), or both. Tip: hover any label for a short explanation.</p>
         </div>
 
         <div id="resultsSection" class="card results-card" style="margin-top:18px" hidden>
             <h3>Results</h3>
+            <p id="grindElapsedBanner" class="grind-elapsed" hidden aria-live="polite"></p>
             <div id="resultsInner"></div>
             <div class="download-row">
                 <button type="button" class="btn-sm" id="btnCopyHits" title="Copy full JSON array to clipboard">Copy JSON</button>
@@ -949,8 +977,12 @@
         </div>
 
         <details class="card diag-card" style="margin-top:16px">
-            <summary>Technical diagnostics</summary>
-            <pre id="diagLog" class="mono"></pre>
+            <summary>Troubleshooting log</summary>
+            <div class="diag-toolbar">
+                <button type="button" class="btn-sm" id="diagClearBtn">Clear log</button>
+                <button type="button" class="btn-sm" id="diagCopyBtn">Copy log</button>
+            </div>
+            <pre id="diagLog" class="mono diag-log"></pre>
         </details>
 
         <footer class="site-footer">
@@ -984,12 +1016,16 @@
             const serverBarText = q("serverBarText");
             const grindCard = q("grindCard");
             const diagLog = q("diagLog");
+            const grindElapsedBanner = q("grindElapsedBanner");
             const toastEl = q("toast");
             let streamInstKps = 0;
             let streamAvgKps = 0;
             let lastHits = [];
             let timerId = null;
             let grindStartedAt = 0;
+            let clientGrindActive = false;
+            let lastGrindProgressPayload = null;
+            let finalWallMsFromServer = null;
 
             var API_BASE = (document.body.getAttribute("data-api-base") || "").trim();
             if (API_BASE.endsWith("/")) API_BASE = API_BASE.slice(0, -1);
@@ -1020,6 +1056,12 @@
                 if (serverBarText) serverBarText.textContent = text;
             }
 
+            function friendlyReadyMessage(sj) {
+                if (!sj || typeof sj !== "object") return "You're connected — ready to search.";
+                if (sj.environment === "deno-deploy") return "You're connected — hosted service ready.";
+                return "You're connected — ready to search.";
+            }
+
             function fetchWithTimeout(url, opts, ms) {
                 var outer = opts && opts.signal ? opts.signal : null;
                 var ctrl = new AbortController();
@@ -1046,6 +1088,20 @@
                 if (!diagLog) return;
                 diagLog.textContent += new Date().toLocaleTimeString() + " " + msg + "\n";
                 diagLog.scrollTop = diagLog.scrollHeight;
+            }
+
+            function clearGrindElapsedBanner() {
+                if (!grindElapsedBanner) return;
+                grindElapsedBanner.textContent = "";
+                grindElapsedBanner.hidden = true;
+            }
+
+            function setGrindElapsedBanner(ms, usedServerClock) {
+                if (!grindElapsedBanner) return;
+                var line = "Wall time " + formatGrindClock(ms) + " (" + Math.round(ms) + " ms)";
+                if (usedServerClock) line += " · confirmed on server";
+                grindElapsedBanner.textContent = line;
+                grindElapsedBanner.hidden = false;
             }
 
             function toast(msg) {
@@ -1115,7 +1171,7 @@
                         " · ETA ≈ " + etaMin.toExponential(2) + " min @ " + Math.round(kps).toLocaleString() + " keys/s (live)";
                 } else {
                     difficulty.textContent =
-                        "Pattern len " + len + " · tries ≈ " + tries.toExponential(3) + " · start a grind to stream keys/s for ETA";
+                        "Pattern len " + len + " · tries ≈ " + tries.toExponential(3) + " · start a search to see live speed and ETA";
                 }
             }
             ["prefix", "suffix"].forEach(function(id) {
@@ -1132,41 +1188,56 @@
                 }
             }
 
-            function applyGrindProgressFromServer(d) {
-                if (!d || d.type !== "progress") return;
+            function updateThroughputFromProgress(d) {
+                if (!d) return;
                 streamInstKps = typeof d.aggregateKps === "number" ? d.aggregateKps : streamInstKps;
-                streamAvgKps = typeof d.avgKpsWall === "number" ? d.avgKpsWall : streamAvgKps;
-
+                if (clientGrindActive && grindStartedAt && d.totalChecked != null) {
+                    var clientSec = Math.max(0.001, (Date.now() - grindStartedAt) / 1000);
+                    streamAvgKps = d.totalChecked / clientSec;
+                } else {
+                    streamAvgKps = typeof d.avgKpsWall === "number" ? d.avgKpsWall : streamAvgKps;
+                }
                 if (throughputLive) {
                     var instK = (d.aggregateKps || 0) / 1000;
-                    var avgK = (d.avgKpsWall || 0) / 1000;
+                    var avgK = streamAvgKps / 1000;
                     throughputLive.textContent =
                         instK.toFixed(2) + "k / " + avgK.toFixed(2) + "k keys/s";
                 }
                 if (throughputSub) {
+                    var checkedPart = d.totalChecked != null ? d.totalChecked.toLocaleString() + " keys tried" : "—";
+                    var timePart = "";
+                    if (clientGrindActive && grindStartedAt) {
+                        timePart = " · " + ((Date.now() - grindStartedAt) / 1000).toFixed(2) + "s so far";
+                    } else if (d.wallElapsedSec != null) {
+                        timePart = " · " + d.wallElapsedSec + "s elapsed";
+                    }
                     throughputSub.textContent =
-                        (d.effectiveWorkers ?? "?") + " workers · " +
-                        (d.totalChecked != null ? d.totalChecked.toLocaleString() + " checked" : "—") +
-                        (d.wallElapsedSec != null ? " · " + d.wallElapsedSec + "s wall" : "");
+                        (d.effectiveWorkers ?? "?") + " parallel lanes · " + checkedPart + timePart;
                 }
+                updateDiff();
+            }
+
+            function applyGrindProgressFromServer(d) {
+                if (!d || d.type !== "progress") return;
+                lastGrindProgressPayload = d;
+                updateThroughputFromProgress(d);
                 if (bestScoreLive) {
                     bestScoreLive.textContent = (d.bestScorePercent ?? 0) + "% score";
                 }
                 if (accuracy) {
                     accuracy.textContent =
                         "Match " + (d.bestMatchedTargetChars ?? 0) + "/" + (d.bestTargetLen ?? 0) +
-                        " (" + (d.bestAccuracyPercent ?? 0) + "%) · avg window " + (d.runningAvgAccuracyPercent ?? 0) + "%\n" +
-                        "Mis " + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
-                        " · best windows " + (d.bestPrefixWindow || "—") + " / " + (d.bestSuffixWindow || "—");
+                        " (" + (d.bestAccuracyPercent ?? 0) + "%) · rolling average " + (d.runningAvgAccuracyPercent ?? 0) + "%\n" +
+                        "Where it differs " + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
+                        " · preview " + (d.bestPrefixWindow || "—") + " / " + (d.bestSuffixWindow || "—");
                 }
-                updateDiff();
                 flashStatCards();
                 if (grindProgressLabel && d.totalChecked) {
                     grindProgressLabel.textContent = "Searching… " + (d.totalChecked || 0).toLocaleString() + " keys tried";
                 }
             }
 
-            async function consumeGrindNdjsonStream(reader) {
+            async function consumeGrindNdjsonStream(reader, hooks) {
                 var dec = new TextDecoder();
                 var buf = "";
                 for (;;) {
@@ -1182,11 +1253,15 @@
                         if (!line) continue;
                         var d = safeJsonParse(line);
                         if (!d) continue;
-                        if (d.type === "started") continue;
+                        if (d.type === "started") {
+                            if (hooks && typeof hooks.onStarted === "function") hooks.onStarted(d);
+                            continue;
+                        }
                         if (d.type === "progress") applyGrindProgressFromServer(d);
                         else if (d.type === "done") return {
                             kind: "done",
-                            hits: d.hits || []
+                            hits: d.hits || [],
+                            wallElapsedSec: typeof d.wallElapsedSec === "number" ? d.wallElapsedSec : null,
                         };
                         else if (d.type === "cancelled") return {
                             kind: "cancelled",
@@ -1202,11 +1277,13 @@
                 if (tail) {
                     var d2 = safeJsonParse(tail);
                     if (d2) {
-                        if (d2.type === "started") {}
-                        else if (d2.type === "progress") applyGrindProgressFromServer(d2);
+                        if (d2.type === "started") {
+                            if (hooks && typeof hooks.onStarted === "function") hooks.onStarted(d2);
+                        } else if (d2.type === "progress") applyGrindProgressFromServer(d2);
                         else if (d2.type === "done") return {
                             kind: "done",
-                            hits: d2.hits || []
+                            hits: d2.hits || [],
+                            wallElapsedSec: typeof d2.wallElapsedSec === "number" ? d2.wallElapsedSec : null,
                         };
                         else if (d2.type === "cancelled") return {
                             kind: "cancelled",
@@ -1334,12 +1411,18 @@
                 }
             }
 
+            function tickClientGrindClock() {
+                if (!grindStartedAt) return;
+                if (grindTimer) grindTimer.textContent = formatGrindClock(Date.now() - grindStartedAt);
+                if (clientGrindActive && lastGrindProgressPayload) {
+                    updateThroughputFromProgress(lastGrindProgressPayload);
+                }
+            }
+
             function startGrindTimer() {
                 grindStartedAt = Date.now();
                 if (timerId) clearInterval(timerId);
-                timerId = setInterval(function() {
-                    if (grindTimer) grindTimer.textContent = formatGrindClock(Date.now() - grindStartedAt);
-                }, 250);
+                timerId = setInterval(tickClientGrindClock, 250);
             }
 
             function stopGrindTimer() {
@@ -1348,18 +1431,19 @@
                     timerId = null;
                 }
                 if (grindTimer) grindTimer.textContent = "0:00";
+                lastGrindProgressPayload = null;
             }
 
             var eventsUrl = apiUrl("/events");
             var es = new EventSource(eventsUrl);
             es.onopen = function() {
                 if (serverBar && serverBar.dataset.state === "pending") {
-                    setServerState("live", "SSE connected · " + eventsUrl);
+                    setServerState("live", "Live updates link ready");
                 }
             };
             es.onerror = function() {
                 if (serverBar && serverBar.dataset.state !== "ok") {
-                    setServerState("warn", "SSE reconnecting… (" + eventsUrl + ")");
+                    setServerState("warn", "Reconnecting live updates…");
                 }
             };
             es.addEventListener("progress", function(ev) {
@@ -1380,14 +1464,14 @@
                 var h = safeJsonParse(o.text);
                 if (o.r.ok && h && h.ok) {
                     if (serverBar && serverBar.dataset.state === "pending") {
-                        setServerState("ok", "API up (" + (h.runtime || "?") + ") · reading /system…");
+                        setServerState("ok", "Almost ready…");
                     }
                 } else if (!o.r.ok && serverBar && serverBar.dataset.state === "pending") {
-                    setServerState("warn", "/health HTTP " + o.r.status);
+                    setServerState("warn", "Quick check did not respond — you can still try Start search.");
                 }
             }).catch(function() {
                 if (serverBar && serverBar.dataset.state === "pending") {
-                    setServerState("warn", "/health timeout or blocked — grind may still work");
+                    setServerState("warn", "Quick check timed out — you can still try Start search.");
                 }
             });
 
@@ -1402,28 +1486,22 @@
                 });
             }).then(function(o) {
                 if (!o.r.ok) {
-                    setServerState("err", "/system HTTP " + o.r.status + " · " + o.text.slice(0, 180));
+                    setServerState("err", "Could not load connection details. Try Start search or refresh the page.");
                     return;
                 }
                 var sj = safeJsonParse(o.text);
                 if (!sj || typeof sj !== "object") {
-                    setServerState("warn", "/system returned non-JSON");
+                    setServerState("warn", "Status reply was unclear — you can still try Start search.");
                     return;
                 }
-                var env = sj.environment === "deno-deploy" ? "Deno Deploy" : String(sj.platform || sj.runtime || "?");
-                var reg = sj.region ? " · " + sj.region : "";
-                setServerState(
-                    "ok",
-                    (sj.runtime || "?") + " · " + (sj.cpuCount != null ? sj.cpuCount + " CPU hint" : "CPUs n/a") +
-                    " · " + env + reg + " · POST /grind on this host"
-                );
+                setServerState("ok", friendlyReadyMessage(sj));
             }).catch(function(err) {
-                var msg = err && err.name === "AbortError" ? "timeout" : "network";
-                setServerState("err", "/system failed (" + msg + ") — check Deploy logs / CORS");
+                var msg = err && err.name === "AbortError" ? "timed out" : "network issue";
+                setServerState("err", "Connection " + msg + ". Check internet or VPN, then refresh.");
             });
 
             if (window.location.protocol === "file:") {
-                showError("Open this app from the server URL (e.g. http://localhost:3737/), not as a local file.");
+                showError("Open this page from your site address (for example http://127.0.0.1:3737/), not as a saved file.");
             }
 
             function wireDownloads() {
@@ -1463,6 +1541,22 @@
             }
             wireDownloads();
 
+            (function wireDiagToolbar() {
+                var clearB = q("diagClearBtn");
+                var copyB = q("diagCopyBtn");
+                if (clearB) {
+                    clearB.onclick = function() {
+                        if (diagLog) diagLog.textContent = "";
+                    };
+                }
+                if (copyB) {
+                    copyB.onclick = function() {
+                        if (!diagLog || !diagLog.textContent) return toast("Log empty");
+                        copyText(diagLog.textContent);
+                    };
+                }
+            })();
+
             var grindAbortController = null;
 
             if (cancelGrindBtn) cancelGrindBtn.onclick = function() {
@@ -1471,6 +1565,8 @@
 
             if (startBtn) startBtn.onclick = async function() {
                 clearError();
+                clearGrindElapsedBanner();
+                finalWallMsFromServer = null;
                 if (diagLog) diagLog.textContent = "";
                 if (resultsInner) resultsInner.innerHTML = "";
                 if (resultsSection) resultsSection.hidden = true;
@@ -1478,7 +1574,7 @@
                 streamInstKps = 0;
                 streamAvgKps = 0;
                 if (throughputLive) throughputLive.textContent = "—";
-                if (throughputSub) throughputSub.textContent = "Waiting for server stream…";
+                if (throughputSub) throughputSub.textContent = "Waiting for live numbers…";
                 if (bestScoreLive) bestScoreLive.textContent = "—";
                 if (accuracy) accuracy.textContent = "—";
                 updateDiff();
@@ -1490,11 +1586,13 @@
                     return;
                 }
 
+                var grindOk = false;
                 grindAbortController = new AbortController();
                 startBtn.disabled = true;
                 if (cancelGrindBtn) cancelGrindBtn.disabled = false;
                 if (grindProgress) grindProgress.hidden = false;
                 if (grindProgressLabel) grindProgressLabel.textContent = "Searching…";
+                clientGrindActive = true;
                 startGrindTimer();
                 if (grindCard) grindCard.setAttribute("aria-busy", "true");
 
@@ -1533,20 +1631,36 @@
                             toast("Cancelled");
                             return;
                         }
-                        showError("HTTP " + r.status + " — " + (ej && ej.error ? ej.error : errText.slice(0, 400)));
+                        showError("Something went wrong (" + r.status + "). " + (ej && ej.error ? String(ej.error) : "Please try again in a moment."));
                         diagLine("grind error body: " + errText.slice(0, 1200));
                         return;
                     }
                     var ct = (r.headers.get("content-type") || "").toLowerCase();
                     if (ct.indexOf("ndjson") !== -1 && r.body) {
-                        var out = await consumeGrindNdjsonStream(r.body.getReader());
+                        var startedDiagOnce = false;
+                        var out = await consumeGrindNdjsonStream(r.body.getReader(), {
+                            onStarted: function(d) {
+                                if (startedDiagOnce) return;
+                                startedDiagOnce = true;
+                                if (d.deployCap != null) {
+                                    diagLine("This host applied a safe parallel limit for your search.");
+                                }
+                            }
+                        });
                         if (out.kind === "done") {
+                            grindOk = true;
+                            if (out.wallElapsedSec != null && Number.isFinite(out.wallElapsedSec)) {
+                                finalWallMsFromServer = Math.round(out.wallElapsedSec * 1000);
+                            }
+                            var wallToastNd = finalWallMsFromServer != null
+                                ? finalWallMsFromServer
+                                : (Date.now() - grindStartedAt);
                             renderHits(out.hits);
-                            toast("Done · " + out.hits.length + " hit(s)");
+                            toast("Done · " + out.hits.length + " hit(s) · " + formatGrindClock(wallToastNd));
                         } else if (out.kind === "cancelled") {
                             toast("Cancelled");
                         } else {
-                            showError(out.message || "Grind failed");
+                            showError(out.message || "Search stopped before completion.");
                             diagLine("grind NDJSON: " + (out.message || ""));
                         }
                         return;
@@ -1554,21 +1668,42 @@
                     var text = await r.text();
                     var j = safeJsonParse(text);
                     if (!Array.isArray(j)) {
-                        showError("Unexpected response (not a JSON array).");
+                        showError("That response was not recognized. Try refreshing the page.");
                         diagLine(text.slice(0, 800));
                         return;
                     }
+                    var wallHdr = r.headers.get("x-grind-wall-ms");
+                    if (wallHdr) {
+                        var whParsed = parseInt(wallHdr, 10);
+                        if (!Number.isNaN(whParsed)) finalWallMsFromServer = whParsed;
+                    }
+                    grindOk = true;
+                    var wallToastJson = finalWallMsFromServer != null
+                        ? finalWallMsFromServer
+                        : (Date.now() - grindStartedAt);
                     renderHits(j);
-                    toast("Done · " + j.length + " hit(s)");
+                    toast("Done · " + j.length + " hit(s) · " + formatGrindClock(wallToastJson));
                 } catch (e) {
                     if (e && (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"))) {
                         toast("Cancelled");
                     } else {
-                        showError((e && e.message ? e.message : String(e)) + " — check network / same-origin / HTTPS mix.");
+                        showError((e && e.message ? e.message : "Something went wrong.") + " Check your connection and try again.");
                     }
                 } finally {
-                    grindAbortController = null;
+                    clientGrindActive = false;
+                    var elapsedClientMs = grindStartedAt ? Date.now() - grindStartedAt : 0;
                     stopGrindTimer();
+                    if (grindOk) {
+                        var bannerMs = finalWallMsFromServer != null ? finalWallMsFromServer : elapsedClientMs;
+                        if (bannerMs > 0) {
+                            setGrindElapsedBanner(bannerMs, finalWallMsFromServer != null);
+                        } else {
+                            clearGrindElapsedBanner();
+                        }
+                    } else {
+                        clearGrindElapsedBanner();
+                    }
+                    grindAbortController = null;
                     if (grindProgress) grindProgress.hidden = true;
                     if (grindCard) grindCard.removeAttribute("aria-busy");
                     startBtn.disabled = false;
