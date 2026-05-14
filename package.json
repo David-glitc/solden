@@ -1,0 +1,13 @@
+{
+  "name": "sol-vanity",
+  "version": "1.0.0",
+  "description": "Hyper-parallelized Solana vanity address grinder. Zero npm deps. Runs on Node ≥22, Bun, Deno.",
+  "type": "module",
+  "scripts": {
+    "node":    "node --experimental-sqlite --experimental-strip-types src/main.ts",
+    "bun":     "bun src/main.ts",
+    "server":  "node --experimental-sqlite --experimental-strip-types src/main.ts --server",
+    "decrypt": "node --experimental-strip-types src/decrypt.ts"
+  },
+  "engines": { "node": ">=22.6.0" }
+}
