@@ -2,7 +2,9 @@ export const UI_HTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="color-scheme" content="light" />
   <title>Sol Vanity Control Panel</title>
   <style>
     :root {
@@ -14,8 +16,10 @@ export const UI_HTML = `<!doctype html>
       --radius-lg: 18px;
       --radius-md: 12px;
       --shadow: 0 8px 28px rgba(0,0,0,.08);
+      --touch-min: 48px;
     }
     * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
     body {
       margin: 0;
       font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
@@ -23,9 +27,16 @@ export const UI_HTML = `<!doctype html>
       line-height: 1.5;
       color: var(--ink);
       background: linear-gradient(160deg, #f0f0f0 0%, #fafafa 40%, #fff 100%);
-      min-height: 100vh;
+      min-height: 100dvh;
+      overflow-x: clip;
+      -webkit-tap-highlight-color: rgba(10, 10, 10, 0.08);
     }
-    .shell { max-width: 1120px; margin: 0 auto; padding: 28px 20px 40px; }
+    .shell {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+        max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    }
     header {
       background: var(--ink);
       color: var(--paper);
@@ -76,7 +87,8 @@ export const UI_HTML = `<!doctype html>
       background: var(--paper);
       color: var(--ink);
       padding: 11px 14px;
-      font-size: 0.95rem;
+      font-size: 1rem;
+      min-height: 44px;
     }
     input:focus, select:focus, button:focus-visible {
       outline: 2px solid var(--ink);
@@ -109,17 +121,26 @@ export const UI_HTML = `<!doctype html>
       color: var(--ink);
       cursor: pointer;
     }
-    .checks input { width: auto; accent-color: var(--ink); }
+    .checks input {
+      width: 22px;
+      height: 22px;
+      min-width: 22px;
+      min-height: 22px;
+      flex-shrink: 0;
+      accent-color: var(--ink);
+    }
     #startBtn {
       margin-top: 16px;
       max-width: 220px;
+      width: 100%;
       background: var(--ink);
       color: var(--paper);
       border: none;
       font-weight: 650;
-      padding: 13px 18px;
+      padding: 14px 20px;
       border-radius: 999px;
       cursor: pointer;
+      min-height: var(--touch-min);
     }
     #startBtn:disabled { opacity: .45; cursor: not-allowed; }
     .hint {
@@ -159,6 +180,12 @@ export const UI_HTML = `<!doctype html>
       font-size: 0.92rem;
       line-height: 1.6;
       color: var(--ink);
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+    #machine, #throughput, #difficulty, #accuracy {
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     #machine { white-space: pre-line; }
     #accuracy { white-space: pre-line; }
@@ -184,6 +211,72 @@ export const UI_HTML = `<!doctype html>
       border-bottom: 1px solid var(--line);
     }
     .site-footer a:hover { border-bottom-color: var(--ink); }
+    .site-footer a:active { opacity: 0.85; }
+
+    @media (max-width: 640px) {
+      body { font-size: 16px; }
+      .shell { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+      header { padding: 18px 18px; border-radius: 14px; }
+      header h1 { font-size: 1.2rem; line-height: 1.25; }
+      header p { font-size: 0.9rem; }
+      .card { padding: 16px 16px; border-radius: 14px; }
+      .row { gap: 16px; }
+      input, select, button {
+        font-size: 16px;
+        min-height: var(--touch-min);
+        padding: 12px 14px;
+      }
+      #startBtn {
+        max-width: none;
+        min-height: var(--touch-min);
+      }
+      .checks {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+      .checks label {
+        min-height: var(--touch-min);
+        padding: 12px 14px;
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        width: 100%;
+      }
+      .checks input {
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        min-height: 24px;
+      }
+      .legend { font-size: 0.85rem; padding: 12px 14px; }
+      .hint { font-size: 0.88rem; }
+      #logs {
+        max-height: min(42dvh, 360px);
+        min-height: 160px;
+        padding: 14px 14px;
+        font-size: 0.88rem;
+      }
+      .mono { font-size: 0.86rem; }
+      .site-footer {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        padding: 16px 16px;
+      }
+      .site-footer a {
+        display: block;
+        padding: 12px 0;
+        min-height: 44px;
+        line-height: 1.4;
+        border-bottom: none;
+        border-radius: var(--radius-md);
+      }
+    }
+
+    @media (min-width: 641px) {
+      #startBtn { width: auto; }
+    }
   </style>
 </head>
 <body>

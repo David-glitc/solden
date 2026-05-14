@@ -24,3 +24,6 @@
 ## 2026-05-13 12:22 UTC+1
 - Web UI: light black/white layout (rounded cards, spacing, readable type); live log panel uses wrap/break-word and hidden horizontal overflow to avoid sideways scroll; added `estKps` field; grind POST sends `uiRefreshMs` and `caseSensitive`; SSE `onopen` line for clarity.
 - Server: ring buffer of last 200 structured log records; new `GET /events` clients receive `connected` then replayed `log` events so early `server_listen` lines appear after page load.
+
+## 2026-05-14
+- Web UI (`ui.ts`): mobile-focused layout — `viewport-fit=cover`, safe-area padding on `.shell`, `100dvh`, `overflow-x: clip`, 16px inputs on narrow viewports (iOS focus zoom), 48px min touch targets, full-width primary button and stacked checkbox rows under 640px, `-webkit-overflow-scrolling: touch` on logs, `theme-color` meta, word-wrap on stat cards.
