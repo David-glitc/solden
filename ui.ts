@@ -42,24 +42,47 @@ export const UI_HTML = `<!doctype html>
         max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
     }
     header {
-      background: var(--ink);
+      background: linear-gradient(155deg, #121212 0%, #0a0a0a 55%, #101010 100%);
       color: var(--paper);
       border-radius: var(--radius-lg);
       padding: 22px 26px;
       margin-bottom: 22px;
       box-shadow: var(--shadow);
+      border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .brand-lockup {
       display: flex;
       gap: 18px;
-      align-items: center;
+      align-items: flex-start;
+      width: 100%;
     }
     .brand-mark { flex: 0 0 auto; line-height: 0; }
     .brand-mark svg { width: clamp(48px, 14vw, 72px); height: auto; display: block; }
     header .solden-logo, header .solden-logo * { fill: #f4f4f4 !important; }
     .brand-copy { min-width: 0; flex: 1; }
-    header h1 { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
-    header p { margin: 8px 0 0; font-size: 0.92rem; opacity: .88; max-width: 62ch; }
+    .brand-kicker {
+      margin: 0 0 6px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      opacity: 0.72;
+    }
+    header h1 { margin: 0; font-size: 1.42rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2; }
+    .brand-desc { margin: 10px 0 0; font-size: 0.92rem; opacity: 0.88; max-width: 62ch; line-height: 1.5; }
+    .header-pill {
+      margin-left: auto;
+      flex-shrink: 0;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #f0f0f0;
+    }
     .grid {
       display: grid;
       gap: 16px;
@@ -83,6 +106,28 @@ export const UI_HTML = `<!doctype html>
       letter-spacing: 0.08em;
       color: var(--muted);
     }
+    .card-head-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .card-head-row h3 { margin: 0; }
+    .btn-ghost {
+      width: auto;
+      min-height: 36px;
+      padding: 6px 14px;
+      font-size: 0.78rem;
+      font-weight: 650;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .btn-ghost:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+    .btn-ghost:active { transform: scale(0.98); }
     .card .body { font-size: 0.95rem; line-height: 1.55; }
     label {
       display: block;
@@ -230,9 +275,10 @@ export const UI_HTML = `<!doctype html>
       body { font-size: 16px; }
       .shell { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
       header { padding: 18px 18px; border-radius: 14px; }
-      .brand-lockup { gap: 14px; align-items: flex-start; }
+      .brand-lockup { flex-wrap: wrap; gap: 14px; align-items: flex-start; }
+      .header-pill { margin-left: 0; }
       header h1 { font-size: 1.2rem; line-height: 1.25; }
-      header p { font-size: 0.9rem; }
+      .brand-desc { font-size: 0.9rem; }
       .card { padding: 16px 16px; border-radius: 14px; }
       .row { gap: 16px; }
       input, select, button {
@@ -294,19 +340,28 @@ export const UI_HTML = `<!doctype html>
   </style>
 </head>
 <body data-api-base="">
+  <script type="application/json" id="vanity-system-boot">__VANITY_SYSTEM_BOOT_JSON__</script>
   <div class="shell">
     <header>
       <div class="brand-lockup">
         <div class="brand-mark">${LOGO_SVG}</div>
         <div class="brand-copy">
+          <p class="brand-kicker">Solden</p>
           <h1>Sol vanity control panel</h1>
-          <p>Light UI, high contrast. Live logs wrap (no horizontal scroll). Connect the event stream to see buffered server logs after load.</p>
+          <p class="brand-desc">The fastest Solana vanity address grinder that doesn't need $1000+ to run</p>
         </div>
+        <span class="header-pill" title="Served by this app">Live</span>
       </div>
     </header>
 
     <div class="grid">
-      <div class="card"><h3>Machine</h3><div id="machine" class="mono body muted">Loading…</div></div>
+      <div class="card">
+        <div class="card-head-row">
+          <h3>Machine</h3>
+          <button type="button" class="btn-ghost" id="machineRefresh">Refresh</button>
+        </div>
+        <div id="machine" class="mono body muted">Loading…</div>
+      </div>
       <div class="card"><h3>Throughput</h3><div id="throughput" class="mono body">No live data yet</div></div>
       <div class="card"><h3>Difficulty</h3><div id="difficulty" class="mono body">Set params to estimate</div></div>
       <div class="card"><h3>Best accuracy</h3><div id="accuracy" class="mono body">No progress yet</div></div>
@@ -377,10 +432,20 @@ export const UI_HTML = `<!doctype html>
       if (s.error) lines.push("error=" + s.error);
       return lines.join("\\n");
     }
+    function applyBootMachine() {
+      if (!machine) return;
+      var el = document.getElementById("vanity-system-boot");
+      if (!el) return;
+      var raw = (el.textContent || "").trim();
+      if (!raw || raw.indexOf("__VANITY_SYSTEM_BOOT") >= 0) return;
+      try {
+        machine.textContent = formatMachine(JSON.parse(raw));
+      } catch (e1) { /* wait for fetch */ }
+    }
     function loadSystemInfo() {
       var ctrl = new AbortController();
       var tid = setTimeout(function() { ctrl.abort(); }, 12000);
-      fetch(apiUrl("/system"), { signal: ctrl.signal })
+      fetch(apiUrl("/system"), { signal: ctrl.signal, cache: "no-store" })
         .then(function(r) {
           clearTimeout(tid);
           if (!r.ok) {
@@ -390,15 +455,21 @@ export const UI_HTML = `<!doctype html>
           }
           return r.json();
         })
-        .then(function(s) { machine.textContent = formatMachine(s); })
+        .then(function(s) {
+          if (machine) machine.textContent = formatMachine(s);
+        })
         .catch(function(e) {
           clearTimeout(tid);
           var msg = (e && e.name === "AbortError")
             ? "Request timed out (12s). Open this UI from the same host:port as the vanity server."
             : ((e && e.message) ? e.message : String(e));
-          machine.textContent =
-            "Could not load /system\\n" + msg +
-            "\\n\\nGrind still works if POST /grind reaches this app. If this page is not served by the vanity app, set data-api-base on body to your API origin (e.g. https://yoursub.deno.dev) and set server env ACCESS_CONTROL_ALLOW_ORIGIN to this page origin.";
+          var cur = machine ? (machine.textContent || "") : "";
+          var replace = !cur || cur.indexOf("Loading") >= 0 || cur.indexOf("Could not load /system") === 0;
+          if (machine && replace) {
+            machine.textContent =
+              "Could not load /system\\n" + msg +
+              "\\n\\nGrind still works if POST /grind reaches this app. If this page is not served by the vanity app, set data-api-base on body to your API origin (e.g. https://yoursub.deno.dev) and set server env ACCESS_CONTROL_ALLOW_ORIGIN to this page origin.";
+          }
           try { line("system: " + msg); } catch (ignore) {}
         });
     }
@@ -428,6 +499,9 @@ export const UI_HTML = `<!doctype html>
     ["prefix","suffix","estKps"].forEach(function(id) { q(id).addEventListener("input", updateDiff); });
     updateDiff();
 
+    applyBootMachine();
+    var machineRefresh = q("machineRefresh");
+    if (machineRefresh) machineRefresh.addEventListener("click", loadSystemInfo);
     loadSystemInfo();
 
     const es = new EventSource(apiUrl("/events"));

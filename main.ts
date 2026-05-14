@@ -273,8 +273,16 @@ async function runServer() {
         }));
       }
 
-      if (req.method === "GET" && url.pathname === "/")
-        return done(new Response(UI_HTML, { headers: { "content-type": "text/html; charset=utf-8" } }));
+      if (req.method === "GET" && url.pathname === "/") {
+        let html = UI_HTML;
+        try {
+          const boot = JSON.stringify(await getSystemInfo());
+          html = html.replace("__VANITY_SYSTEM_BOOT_JSON__", boot);
+        } catch {
+          html = html.replace("__VANITY_SYSTEM_BOOT_JSON__", "{}");
+        }
+        return done(new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } }));
+      }
 
       if (req.method === "GET" && url.pathname === "/events") {
         const stream = new TransformStream<Uint8Array, Uint8Array>();
