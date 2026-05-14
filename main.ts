@@ -273,16 +273,8 @@ async function runServer() {
         }));
       }
 
-      if (req.method === "GET" && url.pathname === "/") {
-        let html = UI_HTML;
-        try {
-          const boot = JSON.stringify(await getSystemInfo());
-          html = html.replace("__VANITY_SYSTEM_BOOT_JSON__", boot);
-        } catch {
-          html = html.replace("__VANITY_SYSTEM_BOOT_JSON__", "{}");
-        }
-        return done(new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } }));
-      }
+      if (req.method === "GET" && url.pathname === "/")
+        return done(new Response(UI_HTML, { headers: { "content-type": "text/html; charset=utf-8" } }));
 
       if (req.method === "GET" && url.pathname === "/events") {
         const stream = new TransformStream<Uint8Array, Uint8Array>();
@@ -321,18 +313,18 @@ async function runServer() {
         }
 
         const go: GrindOpts = {
-          prefix:        body.prefix        ?? "",
-          suffix:        body.suffix        ?? "",
-          count:         body.count         ?? 1,
-          threads:       body.threads       ?? cpuCount,
-          bunOversubscribe: body.bunOversubscribe ?? 1,
-          progressEvery: body.progressEvery ?? 512,
-          uiRefreshMs:   body.uiRefreshMs   ?? 100,
-          maxWorkers:    body.maxWorkers    ?? 256,
-          caseSensitive: body.caseSensitive ?? false,
-          threshold:     body.threshold     ?? 90,
-          encrypt:       body.encrypt       ?? false,
-          decryptKey:    body.decryptKey    ?? "",
+          prefix:        String(body.prefix ?? "").trim(),
+          suffix:        String(body.suffix ?? "").trim(),
+          count:         Math.max(1, Math.min(1_000_000, Number(body.count) || 1)),
+          threads:       Math.max(1, Math.min(512, Number(body.threads) || cpuCount)),
+          bunOversubscribe: Math.max(0.1, Number(body.bunOversubscribe) || 1),
+          progressEvery: Math.max(64, Math.min(10_000_000, Number(body.progressEvery) || 512)),
+          uiRefreshMs:   Math.max(25, Math.min(60_000, Number(body.uiRefreshMs) || 100)),
+          maxWorkers:    Math.max(1, Math.min(1024, Number(body.maxWorkers) || 256)),
+          caseSensitive: Boolean(body.caseSensitive),
+          threshold:     Math.max(0, Math.min(100, Number(body.threshold) || 90)),
+          encrypt:       Boolean(body.encrypt),
+          decryptKey:    String(body.decryptKey ?? ""),
         };
 
         if (!go.prefix && !go.suffix)

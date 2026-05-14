@@ -32,3 +32,4 @@
 - Added `.env.example` (Deno Deploy / local env hints for https://solden.atomiclabs.cc/); `.gitignore` includes `.env`.
 - Branding: `logo.svg` + `brand.ts` (`LOGO_SVG`), header mark, `/favicon.svg` + `/favicon.ico`, footer source link https://github.com/David-glitc/solden
 - Machine + header: HTML embeds `__VANITY_SYSTEM_BOOT_JSON__` replaced at `GET /` with `getSystemInfo()` so the card is filled without relying on `fetch(/system)` alone; Machine **Refresh** button; header gradient, kicker, Live pill; fetch uses `cache: no-store`; failed refresh does not wipe boot snapshot.
+- UI: removed Machine card and boot JSON; `GET /` serves static `UI_HTML` again. Grind form uses `pickInt`/`pickFloat` + client check for prefix/suffix; SSE JSON guarded; POST body clamped on server. Hint clarifies only prefix/suffix required.

@@ -86,9 +86,9 @@ export const UI_HTML = `<!doctype html>
     .grid {
       display: grid;
       gap: 16px;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
     }
-    @media (max-width: 960px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 520px) { .grid { grid-template-columns: 1fr; } }
     .card {
       min-width: 0;
@@ -106,28 +106,6 @@ export const UI_HTML = `<!doctype html>
       letter-spacing: 0.08em;
       color: var(--muted);
     }
-    .card-head-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-    .card-head-row h3 { margin: 0; }
-    .btn-ghost {
-      width: auto;
-      min-height: 36px;
-      padding: 6px 14px;
-      font-size: 0.78rem;
-      font-weight: 650;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      background: var(--surface);
-      color: var(--ink);
-      cursor: pointer;
-    }
-    .btn-ghost:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
-    .btn-ghost:active { transform: scale(0.98); }
     .card .body { font-size: 0.95rem; line-height: 1.55; }
     label {
       display: block;
@@ -241,11 +219,10 @@ export const UI_HTML = `<!doctype html>
       -webkit-overflow-scrolling: touch;
       overscroll-behavior: contain;
     }
-    #machine, #throughput, #difficulty, #accuracy {
+    #throughput, #difficulty, #accuracy {
       overflow-wrap: anywhere;
       word-break: break-word;
     }
-    #machine { white-space: pre-line; }
     #accuracy { white-space: pre-line; }
     .muted { color: var(--muted); }
     .site-footer {
@@ -340,7 +317,6 @@ export const UI_HTML = `<!doctype html>
   </style>
 </head>
 <body data-api-base="">
-  <script type="application/json" id="vanity-system-boot">__VANITY_SYSTEM_BOOT_JSON__</script>
   <div class="shell">
     <header>
       <div class="brand-lockup">
@@ -355,13 +331,6 @@ export const UI_HTML = `<!doctype html>
     </header>
 
     <div class="grid">
-      <div class="card">
-        <div class="card-head-row">
-          <h3>Machine</h3>
-          <button type="button" class="btn-ghost" id="machineRefresh">Refresh</button>
-        </div>
-        <div id="machine" class="mono body muted">Loading…</div>
-      </div>
       <div class="card"><h3>Throughput</h3><div id="throughput" class="mono body">No live data yet</div></div>
       <div class="card"><h3>Difficulty</h3><div id="difficulty" class="mono body">Set params to estimate</div></div>
       <div class="card"><h3>Best accuracy</h3><div id="accuracy" class="mono body">No progress yet</div></div>
@@ -386,7 +355,7 @@ export const UI_HTML = `<!doctype html>
         </div>
       </div>
       <button type="button" id="startBtn">Start grind</button>
-      <p class="hint">Difficulty: expected tries ≈ 58^(prefixLen+suffixLen). ETA (min) ≈ tries / (keys/s) / 60. Progress events can overwrite the estimated keys/s field.</p>
+      <p class="hint"><strong>Required:</strong> at least a prefix <em>or</em> a suffix. Other fields use safe defaults if left blank or invalid. Difficulty ≈ 58^(prefixLen+suffixLen); ETA ≈ tries / (keys/s) / 60.</p>
       <div class="legend"><strong>Mismatch legend:</strong> <span class="mono">P0→P3</span> means first/last wrong index in the combined pattern; <strong>P</strong> = prefix index, <strong>S</strong> = suffix index (0-based).</div>
     </div>
 
@@ -397,15 +366,14 @@ export const UI_HTML = `<!doctype html>
 
     <footer class="site-footer">
       <span>David Pere</span>
-      <a href="https://davidpere.vercel.app" target="_blank" rel="noopener noreferrer">davidpere.vercel.app</a>
+      <a href="https://davidpere.vercel.app" target="_blank" rel="noopener noreferrer">davidpere</a>
       <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">X · @davidpereishim</a>
-      <a href="https://github.com/David-glitc/solden" target="_blank" rel="noopener noreferrer">Source · David-glitc/solden</a>
+      <a href="https://github.com/David-glitc/solden" target="_blank" rel="noopener noreferrer">Source · solden</a>
     </footer>
   </div>
   <script>
     const q = (id) => document.getElementById(id);
     const logs = q("logs");
-    const machine = q("machine");
     const throughput = q("throughput");
     const difficulty = q("difficulty");
     const accuracy = q("accuracy");
@@ -418,66 +386,39 @@ export const UI_HTML = `<!doctype html>
       if (path.charAt(0) !== "/") path = "/" + path;
       return API_BASE ? (API_BASE + path) : path;
     }
-    function formatMachine(s) {
-      var lines = [
-        "runtime=" + (s.runtime || "?"),
-        "cores=" + (s.cpuCount ?? "?"),
-        "platform=" + (s.platform || "?"),
-        "memTotalMB=" + (s.memoryTotalMB != null ? s.memoryTotalMB : "n/a"),
-        "memFreeMB=" + (s.memoryFreeMB != null ? s.memoryFreeMB : "n/a")
-      ];
-      if (s.environment) lines.push("environment=" + s.environment);
-      if (s.region) lines.push("region=" + s.region);
-      if (s.note) lines.push(String(s.note));
-      if (s.error) lines.push("error=" + s.error);
-      return lines.join("\\n");
-    }
-    function applyBootMachine() {
-      if (!machine) return;
-      var el = document.getElementById("vanity-system-boot");
-      if (!el) return;
-      var raw = (el.textContent || "").trim();
-      if (!raw || raw.indexOf("__VANITY_SYSTEM_BOOT") >= 0) return;
-      try {
-        machine.textContent = formatMachine(JSON.parse(raw));
-      } catch (e1) { /* wait for fetch */ }
-    }
-    function loadSystemInfo() {
-      var ctrl = new AbortController();
-      var tid = setTimeout(function() { ctrl.abort(); }, 12000);
-      fetch(apiUrl("/system"), { signal: ctrl.signal, cache: "no-store" })
-        .then(function(r) {
-          clearTimeout(tid);
-          if (!r.ok) {
-            return r.text().then(function(t) {
-              throw new Error("HTTP " + r.status + " " + (t || "").trim().slice(0, 160));
-            });
-          }
-          return r.json();
-        })
-        .then(function(s) {
-          if (machine) machine.textContent = formatMachine(s);
-        })
-        .catch(function(e) {
-          clearTimeout(tid);
-          var msg = (e && e.name === "AbortError")
-            ? "Request timed out (12s). Open this UI from the same host:port as the vanity server."
-            : ((e && e.message) ? e.message : String(e));
-          var cur = machine ? (machine.textContent || "") : "";
-          var replace = !cur || cur.indexOf("Loading") >= 0 || cur.indexOf("Could not load /system") === 0;
-          if (machine && replace) {
-            machine.textContent =
-              "Could not load /system\\n" + msg +
-              "\\n\\nGrind still works if POST /grind reaches this app. If this page is not served by the vanity app, set data-api-base on body to your API origin (e.g. https://yoursub.deno.dev) and set server env ACCESS_CONTROL_ALLOW_ORIGIN to this page origin.";
-          }
-          try { line("system: " + msg); } catch (ignore) {}
-        });
-    }
 
     function now() { return new Date().toLocaleTimeString(); }
-    function line(msg) { logs.textContent += "[" + now() + "] " + msg + "\\n"; logs.scrollTop = logs.scrollHeight; }
-    function getNum(id) { return Number(q(id).value || 0); }
-    function getStr(id) { return (q(id).value || "").trim(); }
+    function line(msg) {
+      if (!logs) return;
+      logs.textContent += "[" + now() + "] " + msg + "\\n";
+      logs.scrollTop = logs.scrollHeight;
+    }
+    function getStr(id) {
+      var el = q(id);
+      return el && el.value != null ? String(el.value).trim() : "";
+    }
+    function pickInt(id, min, max, fallback) {
+      var el = q(id);
+      var raw = el && el.value != null && el.value !== "" ? String(el.value).trim() : "";
+      var n = parseInt(raw, 10);
+      if (Number.isNaN(n)) n = fallback;
+      if (n < min) n = min;
+      if (typeof max === "number" && n > max) n = max;
+      return n;
+    }
+    function pickFloat(id, min, fallback) {
+      var el = q(id);
+      var raw = el && el.value != null && el.value !== "" ? String(el.value).trim() : "";
+      var n = parseFloat(raw);
+      if (Number.isNaN(n)) n = fallback;
+      if (n < min) n = min;
+      return n;
+    }
+    function estKpsVal() {
+      var n = parseFloat(getStr("estKps"));
+      if (Number.isNaN(n) || n < 1) n = 50000;
+      return n;
+    }
     function fmtMis(first, last, pLen, sLen) {
       const cell = (i) => {
         if (i == null || i < 0) return "—";
@@ -487,82 +428,108 @@ export const UI_HTML = `<!doctype html>
       return cell(first) + "→" + cell(last);
     }
     function updateDiff() {
+      if (!difficulty) return;
       const p = getStr("prefix").length;
       const s = getStr("suffix").length;
       const len = p + s;
-      const keysPerSec = Math.max(1, getNum("estKps"));
+      const keysPerSec = estKpsVal();
       const tries = len === 0 ? 1 : Math.pow(58, len);
       const etaMin = tries / keysPerSec / 60;
       difficulty.textContent =
         "len=" + len + " | tries≈" + tries.toExponential(3) + " | ETA≈" + etaMin.toExponential(2) + " min @ " + keysPerSec + " keys/s (est)";
     }
-    ["prefix","suffix","estKps"].forEach(function(id) { q(id).addEventListener("input", updateDiff); });
+    ["prefix","suffix","estKps"].forEach(function(id) {
+      var el = q(id);
+      if (el) el.addEventListener("input", updateDiff);
+    });
     updateDiff();
 
-    applyBootMachine();
-    var machineRefresh = q("machineRefresh");
-    if (machineRefresh) machineRefresh.addEventListener("click", loadSystemInfo);
-    loadSystemInfo();
+    function safeJsonParse(s) {
+      try { return JSON.parse(s); } catch (e) { return null; }
+    }
 
     const es = new EventSource(apiUrl("/events"));
     es.onopen = function() { line("SSE connected."); };
     es.addEventListener("log", function(ev) {
-      const d = JSON.parse(ev.data);
-      const lvl = d.level ? "[" + d.level + "] " : "";
+      var d = safeJsonParse(ev.data);
+      if (!d) return;
+      var lvl = d.level ? "[" + d.level + "] " : "";
       line(lvl + (d.scope || "") + " " + (d.msg || "") + (d.data ? " " + JSON.stringify(d.data) : ""));
     });
     es.addEventListener("threshold", function(ev) {
-      const d = JSON.parse(ev.data);
+      var d = safeJsonParse(ev.data);
+      if (!d) return;
       line("threshold w" + d.workerId + " score=" + d.score + " addr=" + (d.address || "").slice(0, 12) + "…");
     });
     es.addEventListener("bin", function(ev) {
-      const d = JSON.parse(ev.data);
+      var d = safeJsonParse(ev.data);
+      if (!d) return;
       line("bin 70–80% w" + d.workerId + " score=" + d.score + " addr=" + (d.address || "").slice(0, 12) + "…");
     });
     es.addEventListener("progress", function(ev) {
-      const d = JSON.parse(ev.data);
+      var d = safeJsonParse(ev.data);
+      if (!d) return;
       latestAggKps = d.aggregateKps || latestAggKps;
-      if (latestAggKps > 0) q("estKps").value = String(Math.round(latestAggKps));
-      throughput.textContent =
-        "workers=" + (d.effectiveWorkers ?? "?") +
-        " | inst=" + (((d.aggregateKps||0)/1000).toFixed(2)) + "k kp/s" +
-        " | checked=" + (d.totalChecked || 0);
-      accuracy.textContent =
-        "bestScore=" + (d.bestScorePercent ?? 0) + "% | bestAcc=" + (d.bestMatchedTargetChars ?? 0) + "/" + (d.bestTargetLen ?? 0) +
-        " (" + (d.bestAccuracyPercent ?? 0) + "%) | mis=" + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
-        " | runAvg=" + (d.runningAvgAccuracyPercent ?? 0) + "%\n" +
-        "best pfx=" + (d.bestPrefixWindow || "—") + " | best sfx=" + (d.bestSuffixWindow || "—");
+      var ek = q("estKps");
+      if (latestAggKps > 0 && ek) ek.value = String(Math.round(latestAggKps));
+      if (throughput) {
+        throughput.textContent =
+          "workers=" + (d.effectiveWorkers ?? "?") +
+          " | inst=" + (((d.aggregateKps||0)/1000).toFixed(2)) + "k kp/s" +
+          " | checked=" + (d.totalChecked || 0);
+      }
+      if (accuracy) {
+        accuracy.textContent =
+          "bestScore=" + (d.bestScorePercent ?? 0) + "% | bestAcc=" + (d.bestMatchedTargetChars ?? 0) + "/" + (d.bestTargetLen ?? 0) +
+          " (" + (d.bestAccuracyPercent ?? 0) + "%) | mis=" + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
+          " | runAvg=" + (d.runningAvgAccuracyPercent ?? 0) + "%\n" +
+          "best pfx=" + (d.bestPrefixWindow || "—") + " | best sfx=" + (d.bestSuffixWindow || "—");
+      }
       updateDiff();
     });
     es.addEventListener("status", function(ev) {
-      const d = JSON.parse(ev.data);
+      var d = safeJsonParse(ev.data);
+      if (!d) return;
       line("status: " + JSON.stringify(d));
     });
     es.onerror = function() { line("stream reconnecting…"); };
 
-    startBtn.onclick = async function() {
+    if (startBtn) startBtn.onclick = async function() {
       startBtn.disabled = true;
-      const body = {
-        prefix: getStr("prefix"),
-        suffix: getStr("suffix"),
-        count: getNum("count"),
-        threads: getNum("threads"),
-        bunOversubscribe: getNum("bunOver"),
-        threshold: getNum("threshold"),
-        progressEvery: getNum("progressEvery"),
-        uiRefreshMs: getNum("uiRefreshMs"),
-        maxWorkers: getNum("maxWorkers"),
-        caseSensitive: q("caseSensitive").checked,
-        encrypt: q("encrypt").checked,
-        decryptKey: ""
-      };
-      line("POST /grind " + JSON.stringify(body));
       try {
-        const r = await fetch(apiUrl("/grind"), { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) });
-        const j = await r.json();
-        line("result status=" + r.status + " body=" + JSON.stringify(j));
+        var prefix = getStr("prefix");
+        var suffix = getStr("suffix");
+        if (!prefix && !suffix) {
+          line("Add a prefix and/or suffix, then press Start grind again.");
+          return;
+        }
+        var body = {
+          prefix: prefix,
+          suffix: suffix,
+          count: pickInt("count", 1, 1000000, 1),
+          threads: pickInt("threads", 1, 512, 16),
+          bunOversubscribe: pickFloat("bunOver", 0.1, 1.5),
+          threshold: pickInt("threshold", 0, 100, 90),
+          progressEvery: pickInt("progressEvery", 64, 10000000, 1024),
+          uiRefreshMs: pickInt("uiRefreshMs", 25, 60000, 500),
+          maxWorkers: pickInt("maxWorkers", 1, 1024, 256),
+          caseSensitive: !!(q("caseSensitive") && q("caseSensitive").checked),
+          encrypt: !!(q("encrypt") && q("encrypt").checked),
+          decryptKey: ""
+        };
+        line("POST /grind " + JSON.stringify(body));
+        var r = await fetch(apiUrl("/grind"), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          credentials: "same-origin"
+        });
+        var text = await r.text();
+        var j = safeJsonParse(text);
+        if (j === null) line("result status=" + r.status + " (non-JSON) " + text.slice(0, 240));
+        else line("result status=" + r.status + " body=" + JSON.stringify(j));
       } catch (e) {
-        line("request failed: " + e.message);
+        line("request failed: " + (e && e.message ? e.message : String(e)));
       } finally {
         startBtn.disabled = false;
       }
