@@ -12,7 +12,7 @@ import { grind }      from "./grind.ts";
 import { configureLogging, createLogger } from "./log.ts";
 import type { GrindOpts, GrindResult } from "./types.ts";
 import { UI_HTML } from "./ui.ts";
-import { LOGO_SVG } from "./logo.ts";
+import { LOGO_SVG } from "./brand.ts";
 
 // ── arg parser (zero deps) ────────────────────────────────────────────────────
 function parseArgs(args: string[]): Record<string, string | boolean> {
@@ -102,11 +102,10 @@ OPTIONS
 
 SERVER ENDPOINTS
   GET  /                     Web control panel UI
+  GET  /favicon.svg          App mark (also used as favicon)
   GET  /events              Server-Sent Events stream (logs/progress/status)
   GET  /system               Machine/runtime capabilities
   GET  /health              { ok, ts }
-  GET  /logo.svg            SOLDEN logo (SVG)
-  GET  /favicon.ico         same SVG (for default browser probe)
   GET  /results             last 200 hits from DB (JSON)
   POST /grind               GrindOpts body → GrindResult[]
   OPTIONS *                  CORS preflight when ACCESS_CONTROL_ALLOW_ORIGIN is set
@@ -265,16 +264,17 @@ async function runServer() {
       if (req.method === "GET" && url.pathname === "/health")
         return done(Response.json({ ok: true, ts: Date.now(), runtime: RUNTIME }));
 
+      if (req.method === "GET" && (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico")) {
+        return done(new Response(LOGO_SVG, {
+          headers: {
+            "content-type": "image/svg+xml; charset=utf-8",
+            "cache-control": "public, max-age=86400",
+          },
+        }));
+      }
+
       if (req.method === "GET" && url.pathname === "/")
         return done(new Response(UI_HTML, { headers: { "content-type": "text/html; charset=utf-8" } }));
-
-      if (req.method === "GET" && (url.pathname === "/logo.svg" || url.pathname === "/favicon.ico")) {
-        const h = new Headers({
-          "content-type": "image/svg+xml; charset=utf-8",
-          "cache-control": "public, max-age=604800",
-        });
-        return done(new Response(LOGO_SVG, { headers: h }));
-      }
 
       if (req.method === "GET" && url.pathname === "/events") {
         const stream = new TransformStream<Uint8Array, Uint8Array>();

@@ -1,13 +1,15 @@
+import { LOGO_SVG } from "./brand.ts";
+
 export const UI_HTML = `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#111111" />
+  <meta name="theme-color" content="#0a0a0a" />
   <meta name="color-scheme" content="light" />
-  <title>SOLDEN · Sol vanity</title>
-  <link rel="icon" href="/logo.svg" type="image/svg+xml" sizes="any" />
-  <link rel="apple-touch-icon" href="/logo.svg" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
+  <link rel="apple-touch-icon" href="/favicon.svg" />
+  <title>Solden · Sol vanity control panel</title>
   <style>
     :root {
       --ink: #0a0a0a;
@@ -47,25 +49,15 @@ export const UI_HTML = `<!doctype html>
       margin-bottom: 22px;
       box-shadow: var(--shadow);
     }
-    .header-top {
+    .brand-lockup {
       display: flex;
-      align-items: flex-start;
       gap: 18px;
+      align-items: center;
     }
-    .brand-mark {
-      flex-shrink: 0;
-      background: var(--paper);
-      border-radius: 14px;
-      padding: 6px;
-      line-height: 0;
-      box-shadow: 0 1px 0 rgba(255,255,255,.12) inset;
-    }
-    .brand-mark img {
-      display: block;
-      width: 52px;
-      height: 52px;
-    }
-    .header-copy { min-width: 0; flex: 1; }
+    .brand-mark { flex: 0 0 auto; line-height: 0; }
+    .brand-mark svg { width: clamp(48px, 14vw, 72px); height: auto; display: block; }
+    header .solden-logo, header .solden-logo * { fill: #f4f4f4 !important; }
+    .brand-copy { min-width: 0; flex: 1; }
     header h1 { margin: 0; font-size: 1.35rem; font-weight: 650; letter-spacing: -0.02em; }
     header p { margin: 8px 0 0; font-size: 0.92rem; opacity: .88; max-width: 62ch; }
     .grid {
@@ -238,9 +230,7 @@ export const UI_HTML = `<!doctype html>
       body { font-size: 16px; }
       .shell { padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
       header { padding: 18px 18px; border-radius: 14px; }
-      .header-top { gap: 14px; align-items: center; }
-      .brand-mark img { width: 48px; height: 48px; }
-      .brand-mark { padding: 5px; border-radius: 12px; }
+      .brand-lockup { gap: 14px; align-items: flex-start; }
       header h1 { font-size: 1.2rem; line-height: 1.25; }
       header p { font-size: 0.9rem; }
       .card { padding: 16px 16px; border-radius: 14px; }
@@ -306,9 +296,9 @@ export const UI_HTML = `<!doctype html>
 <body data-api-base="">
   <div class="shell">
     <header>
-      <div class="header-top">
-        <div class="brand-mark" aria-hidden="true"><img src="/logo.svg" width="52" height="52" alt="" decoding="async" /></div>
-        <div class="header-copy">
+      <div class="brand-lockup">
+        <div class="brand-mark">${LOGO_SVG}</div>
+        <div class="brand-copy">
           <h1>Sol vanity control panel</h1>
           <p>Light UI, high contrast. Live logs wrap (no horizontal scroll). Connect the event stream to see buffered server logs after load.</p>
         </div>
@@ -354,7 +344,7 @@ export const UI_HTML = `<!doctype html>
       <span>David Pere</span>
       <a href="https://davidpere.vercel.app" target="_blank" rel="noopener noreferrer">davidpere.vercel.app</a>
       <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">X · @davidpereishim</a>
-      <a href="https://github.com/David-gllitc" target="_blank" rel="noopener noreferrer">GitHub · David-gllitc</a>
+      <a href="https://github.com/David-glitc/solden" target="_blank" rel="noopener noreferrer">Source · David-glitc/solden</a>
     </footer>
   </div>
   <script>

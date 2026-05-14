@@ -30,4 +30,4 @@
 - `/system` + UI: `getSystemInfo()` hardened for Deno Deploy (explicit `environment`, no host RAM), full try/catch; optional CORS via `ACCESS_CONTROL_ALLOW_ORIGIN`; UI uses `data-api-base`, checks `fetch` HTTP status, 12s timeout, and always updates Machine card on failure (grind uses same API base). Footer: David Pere, davidpere.vercel.app.
 - Deno Deploy: default `LOG_LEVEL` is `debug` when unset (`log.ts`); server prints `BANNER` before `server_listen`.
 - Added `.env.example` (Deno Deploy / local env hints for https://solden.atomiclabs.cc/); `.gitignore` includes `.env`.
-- `logo.ts` + `GET /logo.svg` and `GET /favicon.ico`: SOLDEN SVG; UI favicon links and header brand mark on light tile.
+- Branding: `logo.svg` + `brand.ts` (`LOGO_SVG`), header mark, `/favicon.svg` + `/favicon.ico`, footer source link https://github.com/David-glitc/solden
