@@ -27,3 +27,5 @@
 
 ## 2026-05-14
 - Web UI (`ui.ts`): mobile-focused layout — `viewport-fit=cover`, safe-area padding on `.shell`, `100dvh`, `overflow-x: clip`, 16px inputs on narrow viewports (iOS focus zoom), 48px min touch targets, full-width primary button and stacked checkbox rows under 640px, `-webkit-overflow-scrolling: touch` on logs, `theme-color` meta, word-wrap on stat cards.
+- `/system` + UI: `getSystemInfo()` hardened for Deno Deploy (explicit `environment`, no host RAM), full try/catch; optional CORS via `ACCESS_CONTROL_ALLOW_ORIGIN`; UI uses `data-api-base`, checks `fetch` HTTP status, 12s timeout, and always updates Machine card on failure (grind uses same API base). Footer: David Pere, davidpere.vercel.app.
+- Deno Deploy: default `LOG_LEVEL` is `debug` when unset (`log.ts`); server prints `BANNER` before `server_listen`.

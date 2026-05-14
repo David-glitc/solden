@@ -106,6 +106,7 @@ SERVER ENDPOINTS
   GET  /health              { ok, ts }
   GET  /results             last 200 hits from DB (JSON)
   POST /grind               GrindOpts body → GrindResult[]
+  OPTIONS *                  CORS preflight when ACCESS_CONTROL_ALLOW_ORIGIN is set
 
 RUNTIMES
   node --experimental-sqlite --experimental-strip-types main.ts -p ATOM
@@ -121,8 +122,9 @@ DEPLOY (Deno Deploy)
   KV uses managed openKv() on deploy. Link a KV database in the Deploy dashboard.
 
 ENV (optional: add --allow-env to deno run if you want LOG_LEVEL / LOG_JSON from the environment)
-  LOG_LEVEL   trace | debug | info | warn | error   [default: info]
+  LOG_LEVEL   trace | debug | info | warn | error   [default: info; on Deno Deploy: debug when unset]
   LOG_JSON    1 | true — force JSON lines (no TTY colors)
+  ACCESS_CONTROL_ALLOW_ORIGIN  e.g. https://your-site.vercel.app — enables CORS on /system, /events, /grind, /health (host UI elsewhere)
 
 DECRYPT
   <runtime> decrypt.ts <cipherHex> <keyHex>
@@ -139,26 +141,54 @@ function fmt(r: GrindResult): string {
   return s;
 }
 
-async function getSystemInfo() {
-  let memoryTotalMB: number | null = null;
-  let memoryFreeMB: number | null = null;
-  let platform = "unknown";
-  if (RUNTIME === "deno") {
-    platform = (globalThis as any).Deno?.build?.os ?? "deno";
-    try {
-      const mem = (globalThis as any).Deno?.systemMemoryInfo?.();
-      if (mem?.total) memoryTotalMB = Math.round(mem.total / (1024 * 1024));
-      if (mem?.free) memoryFreeMB = Math.round(mem.free / (1024 * 1024));
-    } catch { /* optional */ }
-  } else {
+async function getSystemInfo(): Promise<Record<string, unknown>> {
+  const base = {
+    runtime: RUNTIME,
+    cpuCount,
+    recommendedThreads: cpuCount,
+    memoryTotalMB: null as number | null,
+    memoryFreeMB: null as number | null,
+    platform: "unknown",
+  };
+  try {
+    const deployId = env("DENO_DEPLOYMENT_ID");
+    if (deployId) {
+      let region: string | null = null;
+      try {
+        region = (globalThis as any).Deno?.env?.get?.("DENO_REGION") ?? null;
+      } catch { /* no env cap */ }
+      return {
+        ...base,
+        platform: "deno-deploy",
+        environment: "deno-deploy",
+        region,
+        memoryTotalMB: null,
+        memoryFreeMB: null,
+        note: "Deno Deploy isolate: host memory is not exposed; cores below are parallelism hints.",
+      };
+    }
+    if (RUNTIME === "deno") {
+      base.platform = (globalThis as any).Deno?.build?.os ?? "deno";
+      try {
+        const mem = (globalThis as any).Deno?.systemMemoryInfo?.();
+        if (mem?.total) base.memoryTotalMB = Math.round(mem.total / (1024 * 1024));
+        if (mem?.free) base.memoryFreeMB = Math.round(mem.free / (1024 * 1024));
+      } catch { /* missing --allow-sys etc. */ }
+      return { ...base };
+    }
     try {
       const os = await import("node:os");
-      platform = `${os.platform()}-${os.arch()}`;
-      memoryTotalMB = Math.round(os.totalmem() / (1024 * 1024));
-      memoryFreeMB = Math.round(os.freemem() / (1024 * 1024));
-    } catch { platform = RUNTIME; }
+      base.platform = `${os.platform()}-${os.arch()}`;
+      base.memoryTotalMB = Math.round(os.totalmem() / (1024 * 1024));
+      base.memoryFreeMB = Math.round(os.freemem() / (1024 * 1024));
+    } catch {
+      base.platform = RUNTIME;
+    }
+    return { ...base };
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ...base, platform: "error", error: msg };
   }
-  return { runtime: RUNTIME, cpuCount, platform, memoryTotalMB, memoryFreeMB, recommendedThreads: cpuCount };
 }
 
 function effectiveWorkerPreview(o: GrindOpts): { raw: number; capped: number } {
@@ -200,9 +230,20 @@ async function runServer() {
     pushLogRing(rec);
     sseSend("log", rec);
   };
-  log.info("server_listen", { port, dbPath, runtime: RUNTIME });
   console.log(BANNER);
   console.log(`\x1b[32m🌐  http://0.0.0.0:${port}\x1b[0m\n`);
+  log.info("server_listen", { port, dbPath, runtime: RUNTIME });
+
+  const corsOrigin = (env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim();
+  const applyCors = (res: Response): Response => {
+    if (!corsOrigin) return res;
+    const h = new Headers(res.headers);
+    h.set("access-control-allow-origin", corsOrigin);
+    h.set("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+    h.set("access-control-allow-headers", "content-type, accept");
+    h.set("vary", "origin");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  };
 
   serveHttp(port, async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -210,11 +251,14 @@ async function runServer() {
     log.debug("http_request", { method: req.method, path: url.pathname });
 
     const done = (res: Response) => {
-      log.info("http_response", { method: req.method, path: url.pathname, status: res.status, ms: Date.now() - t0 });
-      return res;
+      const out = applyCors(res);
+      log.info("http_response", { method: req.method, path: url.pathname, status: out.status, ms: Date.now() - t0 });
+      return out;
     };
 
     try {
+      if (corsOrigin && req.method === "OPTIONS")
+        return done(new Response(null, { status: 204 }));
       if (req.method === "GET" && url.pathname === "/health")
         return done(Response.json({ ok: true, ts: Date.now(), runtime: RUNTIME }));
 

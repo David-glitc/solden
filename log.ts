@@ -104,9 +104,16 @@ function detectRuntime(): string {
   return "node";
 }
 
-/** Call from main after parsing args; reads `LOG_LEVEL`, `LOG_JSON`. */
+/** Call from main after parsing args; reads `LOG_LEVEL`, `LOG_JSON`. On Deno Deploy, defaults to `debug` when `LOG_LEVEL` is unset. */
 export function initLoggingFromEnv(): void {
-  minRank = LEVEL_RANK[parseLevel(env("LOG_LEVEL") ?? "info")];
+  let raw = env("LOG_LEVEL");
+  if (!raw) {
+    try {
+      const id = (globalThis as any).Deno?.env?.get?.("DENO_DEPLOYMENT_ID");
+      if (id) raw = "debug";
+    } catch { /* no env cap */ }
+  }
+  minRank = LEVEL_RANK[parseLevel(raw ?? "info")];
   const j = env("LOG_JSON");
   forceJson = j === "1" || j === "true" || j === "yes";
 }

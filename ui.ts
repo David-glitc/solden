@@ -279,7 +279,7 @@ export const UI_HTML = `<!doctype html>
     }
   </style>
 </head>
-<body>
+<body data-api-base="">
   <div class="shell">
     <header>
       <h1>Sol vanity control panel</h1>
@@ -322,8 +322,9 @@ export const UI_HTML = `<!doctype html>
     </div>
 
     <footer class="site-footer">
-      <span>David Pereishi</span>
-      <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">x.com/davidpereishim</a>
+      <span>David Pere</span>
+      <a href="https://davidpere.vercel.app" target="_blank" rel="noopener noreferrer">davidpere.vercel.app</a>
+      <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">X · @davidpereishim</a>
       <a href="https://github.com/David-gllitc" target="_blank" rel="noopener noreferrer">GitHub · David-gllitc</a>
     </footer>
   </div>
@@ -336,6 +337,52 @@ export const UI_HTML = `<!doctype html>
     const accuracy = q("accuracy");
     const startBtn = q("startBtn");
     let latestAggKps = 0;
+
+    var API_BASE = (document.body.getAttribute("data-api-base") || "").trim();
+    if (API_BASE.endsWith("/")) API_BASE = API_BASE.slice(0, -1);
+    function apiUrl(path) {
+      if (path.charAt(0) !== "/") path = "/" + path;
+      return API_BASE ? (API_BASE + path) : path;
+    }
+    function formatMachine(s) {
+      var lines = [
+        "runtime=" + (s.runtime || "?"),
+        "cores=" + (s.cpuCount ?? "?"),
+        "platform=" + (s.platform || "?"),
+        "memTotalMB=" + (s.memoryTotalMB != null ? s.memoryTotalMB : "n/a"),
+        "memFreeMB=" + (s.memoryFreeMB != null ? s.memoryFreeMB : "n/a")
+      ];
+      if (s.environment) lines.push("environment=" + s.environment);
+      if (s.region) lines.push("region=" + s.region);
+      if (s.note) lines.push(String(s.note));
+      if (s.error) lines.push("error=" + s.error);
+      return lines.join("\\n");
+    }
+    function loadSystemInfo() {
+      var ctrl = new AbortController();
+      var tid = setTimeout(function() { ctrl.abort(); }, 12000);
+      fetch(apiUrl("/system"), { signal: ctrl.signal })
+        .then(function(r) {
+          clearTimeout(tid);
+          if (!r.ok) {
+            return r.text().then(function(t) {
+              throw new Error("HTTP " + r.status + " " + (t || "").trim().slice(0, 160));
+            });
+          }
+          return r.json();
+        })
+        .then(function(s) { machine.textContent = formatMachine(s); })
+        .catch(function(e) {
+          clearTimeout(tid);
+          var msg = (e && e.name === "AbortError")
+            ? "Request timed out (12s). Open this UI from the same host:port as the vanity server."
+            : ((e && e.message) ? e.message : String(e));
+          machine.textContent =
+            "Could not load /system\\n" + msg +
+            "\\n\\nGrind still works if POST /grind reaches this app. If this page is not served by the vanity app, set data-api-base on body to your API origin (e.g. https://yoursub.deno.dev) and set server env ACCESS_CONTROL_ALLOW_ORIGIN to this page origin.";
+          try { line("system: " + msg); } catch (ignore) {}
+        });
+    }
 
     function now() { return new Date().toLocaleTimeString(); }
     function line(msg) { logs.textContent += "[" + now() + "] " + msg + "\\n"; logs.scrollTop = logs.scrollHeight; }
@@ -362,11 +409,9 @@ export const UI_HTML = `<!doctype html>
     ["prefix","suffix","estKps"].forEach(function(id) { q(id).addEventListener("input", updateDiff); });
     updateDiff();
 
-    fetch("/system").then(function(r){ return r.json(); }).then(function(s){
-      machine.textContent = "runtime=" + s.runtime + "\\ncores=" + s.cpuCount + "\\nplatform=" + s.platform + "\\nmemTotalMB=" + (s.memoryTotalMB ?? "n/a");
-    }).catch(function(e){ line("system info failed: " + e.message); });
+    loadSystemInfo();
 
-    const es = new EventSource("/events");
+    const es = new EventSource(apiUrl("/events"));
     es.onopen = function() { line("SSE connected."); };
     es.addEventListener("log", function(ev) {
       const d = JSON.parse(ev.data);
@@ -420,7 +465,7 @@ export const UI_HTML = `<!doctype html>
       };
       line("POST /grind " + JSON.stringify(body));
       try {
-        const r = await fetch("/grind", { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) });
+        const r = await fetch(apiUrl("/grind"), { method:"POST", headers:{ "content-type":"application/json" }, body: JSON.stringify(body) });
         const j = await r.json();
         line("result status=" + r.status + " body=" + JSON.stringify(j));
       } catch (e) {
