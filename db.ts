@@ -34,6 +34,17 @@ export interface DB {
   getHits(limit?: number): Promise<any[]>;
 }
 
+/** No disk/KV: HTTP responses return hits only in-memory; never persists secrets. */
+export function createEphemeralDb(): DB {
+  return {
+    async saveHits(_hits: GrindResult[]) {},
+    async saveHit(_r: GrindResult) {},
+    async getHits(_limit = 200) {
+      return [];
+    },
+  };
+}
+
 /** Deno KV file path derived from the SQLite-style -d path (vanity.db → vanity.kv). */
 function denoKvStorePath(sqliteStylePath: string): string {
   if (sqliteStylePath.endsWith(".db")) return sqliteStylePath.slice(0, -3) + ".kv";

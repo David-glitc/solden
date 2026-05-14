@@ -7,30 +7,39 @@
 //   deno run --allow-read --allow-write --allow-net main.ts [opts]
 
 import { RUNTIME, cpuCount, argv, exit, isTTY, writeStdout, stdoutColumns, openAppend, serveHttp } from "./runtime.ts";
-import { initDb }     from "./db.ts";
+import { createEphemeralDb, initDb } from "./db.ts";
 import { grind }      from "./grind.ts";
 import { configureLogging, createLogger, formatElapsedSeconds } from "./log.ts";
 import type { GrindOpts, GrindResult, WorkerMsg } from "./types.ts";
-import { LOGO_SVG } from "./brand.ts";
+
+async function readTextFromModuleUrl(moduleUrl: URL): Promise<string> {
+  const { fileURLToPath } = await import("node:url");
+  const filePath = fileURLToPath(moduleUrl);
+  if (RUNTIME === "deno") {
+    return await (globalThis as any).Deno.readTextFile(filePath);
+  }
+  if (RUNTIME === "bun") {
+    return await (globalThis as any).Bun.file(filePath).text();
+  }
+  const { readFileSync } = await import("node:fs");
+  return readFileSync(filePath, "utf8");
+}
 
 const CONTROL_PANEL_HTML = new URL("./static/index.html", import.meta.url);
+const SOLD_MARK_SVG_URL = new URL("./static/solden-mark.svg", import.meta.url);
 let controlPanelHtmlCache: string | null = null;
+let soldMarkSvgCache: string | null = null;
 
 async function getControlPanelHtml(): Promise<string> {
   if (controlPanelHtmlCache) return controlPanelHtmlCache;
-  const { fileURLToPath } = await import("node:url");
-  const panelPath = fileURLToPath(CONTROL_PANEL_HTML);
-  let html: string;
-  if (RUNTIME === "deno") {
-    html = await (globalThis as any).Deno.readTextFile(panelPath);
-  } else if (RUNTIME === "bun") {
-    html = await (globalThis as any).Bun.file(panelPath).text();
-  } else {
-    const { readFileSync } = await import("node:fs");
-    html = readFileSync(panelPath, "utf8");
-  }
-  controlPanelHtmlCache = html;
-  return html;
+  controlPanelHtmlCache = await readTextFromModuleUrl(CONTROL_PANEL_HTML);
+  return controlPanelHtmlCache;
+}
+
+async function getSoldMarkSvg(): Promise<string> {
+  if (soldMarkSvgCache) return soldMarkSvgCache;
+  soldMarkSvgCache = await readTextFromModuleUrl(SOLD_MARK_SVG_URL);
+  return soldMarkSvgCache;
 }
 
 // ── arg parser (zero deps) ────────────────────────────────────────────────────
@@ -145,7 +154,8 @@ DEV & LOGS
 SERVER ENDPOINTS
   GET  /                     Control panel (static/index.html)
   GET  /index.html           Same HTML as /
-  GET  /favicon.svg          App mark (also used as favicon)
+  GET  /favicon.svg          Solden mark (SVG; same file as static/solden-mark.svg)
+  GET  /solden-mark.svg      Same SVG asset (explicit path for docs / hotlinking)
   GET  /events              Server-Sent Events stream (logs/progress/status)
   GET  /system               Machine/runtime capabilities
   GET  /health              { ok, ts }
@@ -164,7 +174,7 @@ BUN SETUP (high concurrency presets)
 
 DEPLOY (Deno Deploy)
   Set entrypoint to main.ts. When DENO_DEPLOYMENT_ID is set, server mode starts automatically.
-  KV uses managed openKv() on deploy. Link a KV database in the Deploy dashboard.
+  By default hits are NOT written to Deno KV (ephemeral HTTP). Set VANITY_HTTP_PERSIST_HITS=1 to enable KV and link a KV database.
 
 ENV (optional: add --allow-env to deno run if you want LOG_LEVEL / LOG_JSON from the environment)
   LOG_LEVEL   trace | debug | info | warn | error   [default: info]
@@ -172,6 +182,9 @@ ENV (optional: add --allow-env to deno run if you want LOG_LEVEL / LOG_JSON from
   LOG_VERBOSE 1 | true — full JSON on stderr (default: compact heartbeat on TTY)
   VANITY_USE_WEBGPU  0|off|false | 1|true|auto — probe GPU on Deno local (needs -W or this env; deno task grind-gpu passes -W and --unstable-webgpu)
   ACCESS_CONTROL_ALLOW_ORIGIN  e.g. https://your-site.vercel.app — enables CORS on /system, /events, /grind, /health (host UI elsewhere)
+  VANITY_HTTP_EPHEMERAL  1|true — HTTP server never persists hits to DB/KV (self-hosted prod)
+  VANITY_HTTP_PERSIST_HITS  1|true — on Deno Deploy only: store hits in KV (default off on Deploy)
+  VANITY_SSE_LOG_PULSE  1|true — on Deploy: also mirror http_grind_pulse lines into the SSE log ring (default: pulse skipped to save RAM/wire)
 
 DECRYPT
   <runtime> decrypt.ts <cipherHex> <keyHex>
@@ -188,6 +201,77 @@ function fmt(r: GrindResult): string {
   return s;
 }
 
+function envInt(name: string, fallback?: number): number | undefined {
+  const v = env(name);
+  if (v == null || v === "") return fallback;
+  const n = parseInt(String(v).trim(), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function envTruthy(name: string): boolean {
+  const v = (env(name) ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** Deploy: no KV/SQLite for user hits unless VANITY_HTTP_PERSIST_HITS. Any host: VANITY_HTTP_EPHEMERAL=1 skips persist. */
+function httpUsesEphemeralHits(): boolean {
+  if (envTruthy("VANITY_HTTP_EPHEMERAL")) return true;
+  const onDeploy = Boolean(env("DENO_DEPLOYMENT_ID"));
+  if (!onDeploy) return false;
+  return !envTruthy("VANITY_HTTP_PERSIST_HITS");
+}
+
+/** One grind at a time on Deno Deploy to avoid multiplying worker memory across requests. */
+let deployGrindChain = Promise.resolve();
+function runDeploySerialized<T>(fn: () => Promise<T>): Promise<T> {
+  if (!env("DENO_DEPLOYMENT_ID")) return fn();
+  const next = deployGrindChain.then(() => fn());
+  deployGrindChain = next.then(() => {}).catch(() => {});
+  return next;
+}
+
+type DeployCapInfo = {
+  cap: number;
+  rssMB: number | null;
+  heapMB: number | null;
+  source: string;
+};
+
+/** Isolate RSS/heap hints on Deploy (not host RAM). Override with VANITY_DEPLOY_MAX_WORKERS or budget envs. */
+function computeDeployWorkerCap(): DeployCapInfo {
+  if (!env("DENO_DEPLOYMENT_ID")) {
+    return { cap: 1024, rssMB: null, heapMB: null, source: "not-deploy" };
+  }
+  const hard = envInt("VANITY_DEPLOY_MAX_WORKERS");
+  if (hard != null && hard >= 1) {
+    return { cap: Math.min(512, hard), rssMB: null, heapMB: null, source: "env:VANITY_DEPLOY_MAX_WORKERS" };
+  }
+  let rss = 0;
+  let heap = 0;
+  try {
+    const mu = (globalThis as any).Deno?.memoryUsage?.();
+    if (mu && typeof mu.rss === "number") rss = mu.rss;
+    if (mu && typeof mu.heapUsed === "number") heap = mu.heapUsed;
+  } catch { /* ignore */ }
+  const rssMB = rss > 0 ? rss / (1024 * 1024) : null;
+  const heapMB = heap > 0 ? heap / (1024 * 1024) : null;
+  const budgetMb = envInt("VANITY_DEPLOY_MEMORY_BUDGET_MB");
+  const perWorkerMb = envInt("VANITY_DEPLOY_MB_PER_WORKER") ?? 48;
+  if (budgetMb != null && budgetMb > 0) {
+    const c = Math.max(2, Math.min(128, Math.floor(budgetMb / Math.max(8, perWorkerMb))));
+    return { cap: c, rssMB, heapMB, source: "env-budget" };
+  }
+  let cap = 6;
+  if (rssMB != null) {
+    if (rssMB < 70) cap = 8;
+    else if (rssMB < 110) cap = 6;
+    else if (rssMB < 180) cap = 4;
+    else cap = 3;
+  }
+  if (heapMB != null && heapMB > 200) cap = Math.min(cap, 4);
+  return { cap, rssMB, heapMB, source: "rss-tiers" };
+}
+
 async function getSystemInfo(): Promise<Record<string, unknown>> {
   const base = {
     runtime: RUNTIME,
@@ -196,6 +280,7 @@ async function getSystemInfo(): Promise<Record<string, unknown>> {
     memoryTotalMB: null as number | null,
     memoryFreeMB: null as number | null,
     platform: "unknown",
+    httpEphemeralHits: httpUsesEphemeralHits(),
   };
   try {
     const deployId = env("DENO_DEPLOYMENT_ID");
@@ -204,6 +289,7 @@ async function getSystemInfo(): Promise<Record<string, unknown>> {
       try {
         region = (globalThis as any).Deno?.env?.get?.("DENO_REGION") ?? null;
       } catch { /* no env cap */ }
+      const cap = computeDeployWorkerCap();
       return {
         ...base,
         platform: "deno-deploy",
@@ -211,7 +297,13 @@ async function getSystemInfo(): Promise<Record<string, unknown>> {
         region,
         memoryTotalMB: null,
         memoryFreeMB: null,
-        note: "Deno Deploy isolate: host memory is not exposed; cores below are parallelism hints.",
+        deployWorkerCap: cap.cap,
+        deployWorkerCapSource: cap.source,
+        deployRssMB: cap.rssMB != null ? Number(cap.rssMB.toFixed(2)) : null,
+        deployHeapMB: cap.heapMB != null ? Number(cap.heapMB.toFixed(2)) : null,
+        deploySerializeGrinds: true,
+        note:
+          "Deno Deploy: host RAM is not exposed; worker cap uses isolate RSS/heap heuristics (or VANITY_DEPLOY_MAX_WORKERS / VANITY_DEPLOY_MEMORY_BUDGET_MB + VANITY_DEPLOY_MB_PER_WORKER). POST /grind runs one at a time per isolate. User hits are not persisted unless VANITY_HTTP_PERSIST_HITS=1 (KV).",
       };
     }
     if (RUNTIME === "deno") {
@@ -258,12 +350,15 @@ function formatMismatch(first: number, last: number, pLen: number, _sLen: number
 
 // ── server mode ───────────────────────────────────────────────────────────────
 async function runServer() {
-  const db = await initDb(dbPath);
+  const onDeploy = Boolean(env("DENO_DEPLOYMENT_ID"));
+  const db = httpUsesEphemeralHits() ? createEphemeralDb() : await initDb(dbPath);
   const sseClients = new Set<WritableStreamDefaultWriter<Uint8Array>>();
   const sseEncoder = new TextEncoder();
-  const LOG_RING_MAX = 200;
+  const LOG_RING_MAX = onDeploy ? 48 : 200;
+  const skipRingPulse = onDeploy && !envTruthy("VANITY_SSE_LOG_PULSE");
   const logRing: Record<string, unknown>[] = [];
   const pushLogRing = (rec: Record<string, unknown>) => {
+    if (skipRingPulse && rec.msg === "http_grind_pulse") return;
     logRing.push(rec);
     if (logRing.length > LOG_RING_MAX) logRing.splice(0, logRing.length - LOG_RING_MAX);
   };
@@ -279,7 +374,7 @@ async function runServer() {
   };
   console.log(BANNER);
   console.log(`\x1b[32m🌐  http://0.0.0.0:${port}\x1b[0m\n`);
-  log.info("server_listen", { port, dbPath, runtime: RUNTIME });
+  log.info("server_listen", { port, dbPath, runtime: RUNTIME, httpEphemeralHits: httpUsesEphemeralHits() });
 
   const corsOrigin = (env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim();
   const applyCors = (res: Response): Response => {
@@ -309,8 +404,11 @@ async function runServer() {
       if (req.method === "GET" && url.pathname === "/health")
         return done(Response.json({ ok: true, ts: Date.now(), runtime: RUNTIME }));
 
-      if (req.method === "GET" && (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico")) {
-        return done(new Response(LOGO_SVG, {
+      if (
+        req.method === "GET" &&
+        (url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico" || url.pathname === "/solden-mark.svg")
+      ) {
+        return done(new Response(await getSoldMarkSvg(), {
           headers: {
             "content-type": "image/svg+xml; charset=utf-8",
             "cache-control": "public, max-age=86400",
@@ -399,26 +497,46 @@ async function runServer() {
           return done(Response.json({ error: "prefix or suffix required" }, { status: 400 }));
         }
 
+        const capInfo = computeDeployWorkerCap();
+        const goForGrind: GrindOpts = {
+          ...go,
+          threads: Math.min(go.threads, capInfo.cap),
+          maxWorkers: Math.min(go.maxWorkers, capInfo.cap),
+        };
+        if (go.threads !== goForGrind.threads || go.maxWorkers !== goForGrind.maxWorkers) {
+          log.warn("http_grind_deploy_worker_cap", {
+            requestedThreads: go.threads,
+            requestedMaxWorkers: go.maxWorkers,
+            appliedCap: capInfo.cap,
+            capSource: capInfo.source,
+            rssMB: capInfo.rssMB != null ? Number(capInfo.rssMB.toFixed(2)) : undefined,
+            heapMB: capInfo.heapMB != null ? Number(capInfo.heapMB.toFixed(2)) : undefined,
+          });
+        }
+
         const rawHttpWorkers = RUNTIME === "bun"
-          ? Math.max(1, Math.round(go.threads * go.bunOversubscribe))
-          : Math.max(1, go.threads);
-        const httpEffWorkers = Math.min(rawHttpWorkers, Math.max(1, go.maxWorkers));
+          ? Math.max(1, Math.round(goForGrind.threads * goForGrind.bunOversubscribe))
+          : Math.max(1, goForGrind.threads);
+        const httpEffWorkers = Math.min(rawHttpWorkers, Math.max(1, goForGrind.maxWorkers));
 
         log.info("http_grind", {
-          prefix: go.prefix,
-          suffix: go.suffix,
-          count: go.count,
-          threads: go.threads,
+          prefix: goForGrind.prefix,
+          suffix: goForGrind.suffix,
+          count: goForGrind.count,
+          threads: goForGrind.threads,
           effectiveWorkers: httpEffWorkers,
-          useWebgpu: go.useWebgpu,
+          deployCap: env("DENO_DEPLOYMENT_ID") ? capInfo.cap : undefined,
+          useWebgpu: goForGrind.useWebgpu,
           origin: req.headers.get("origin") ?? null,
           referer: (req.headers.get("referer") ?? "").slice(0, 120) || null,
         });
-        sseSend("status", { message: "grind_started", opts: { ...go, decryptKey: undefined } });
+        sseSend("status", { message: "grind_started", opts: { ...goForGrind, decryptKey: undefined } });
 
         const grindWall0 = Date.now();
         let lastGrindLogMs = 0;
+        let lastWireProgressMs = 0;
         const GRIND_LOG_INTERVAL_MS = 5000;
+        const deployProgressWireMs = onDeploy ? Math.max(120, Math.min(2000, goForGrind.uiRefreshMs)) : 0;
         const wantNdjson = (req.headers.get("accept") ?? "").toLowerCase().includes("application/x-ndjson");
         let ndjsonWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
         const ndjsonEnc = new TextEncoder();
@@ -433,9 +551,13 @@ async function runServer() {
             avgKpsWall,
             wallElapsedSec: Number(wallSec.toFixed(2)),
           };
-          sseSend("progress", payload);
-          if (ndjsonWriter) {
-            void ndjsonWriter.write(ndjsonEnc.encode(JSON.stringify(payload) + "\n")).catch(() => {});
+          const allowWire = deployProgressWireMs === 0 || now - lastWireProgressMs >= deployProgressWireMs;
+          if (allowWire) {
+            lastWireProgressMs = now;
+            sseSend("progress", payload);
+            if (ndjsonWriter) {
+              void ndjsonWriter.write(ndjsonEnc.encode(JSON.stringify(payload) + "\n")).catch(() => {});
+            }
           }
           if (now - lastGrindLogMs < GRIND_LOG_INTERVAL_MS) return;
           lastGrindLogMs = now;
@@ -444,7 +566,7 @@ async function runServer() {
           const instK = (msg.aggregateKps ?? 0) / 1000;
           const addr = msg.bestAddress ?? "";
           const addrHead = addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-6)}` : (addr || "");
-          const pLen = go.prefix.length;
+          const pLen = goForGrind.prefix.length;
           const fi = msg.firstMismatchIndex ?? -1;
           const li = msg.lastMismatchIndex ?? -1;
           const misCell = (i: number) => {
@@ -469,13 +591,14 @@ async function runServer() {
         };
 
         const runGrindWithHandlers = async () => {
-          return await grind(
-            go,
+          const run = () => grind(
+            goForGrind,
             onHttpProgress,
             (msg) => sseSend("threshold", { workerId: msg.workerId, score: msg.score, address: msg.address }),
             (msg) => sseSend("bin", { workerId: msg.workerId, score: msg.score, address: msg.address }),
             req.signal,
           );
+          return await runDeploySerialized(run);
         };
 
         const isGrindAbortError = (e: unknown) =>
@@ -487,7 +610,15 @@ async function runServer() {
           ndjsonWriter = writable.getWriter();
           void ndjsonWriter.write(
             ndjsonEnc.encode(
-              JSON.stringify({ type: "started", t: Date.now(), prefix: go.prefix, suffix: go.suffix }) + "\n",
+              JSON.stringify({
+                type: "started",
+                t: Date.now(),
+                prefix: goForGrind.prefix,
+                suffix: goForGrind.suffix,
+                appliedThreads: goForGrind.threads,
+                appliedMaxWorkers: goForGrind.maxWorkers,
+                deployCap: env("DENO_DEPLOYMENT_ID") ? capInfo.cap : undefined,
+              }) + "\n",
             ),
           ).catch(() => {});
           void (async () => {
@@ -496,10 +627,19 @@ async function runServer() {
               await db.saveHits(results);
               log.info("http_grind_ok", { hits: results.length, ms: Date.now() - t0, stream: "ndjson" });
               sseSend("status", { message: "grind_complete", hits: results.length, ms: Date.now() - t0 });
-              await ndjsonWriter!.write(ndjsonEnc.encode(JSON.stringify({ type: "done", hits: results }) + "\n"));
+              const grindWallMs = Date.now() - grindWall0;
+              await ndjsonWriter!.write(
+                ndjsonEnc.encode(
+                  JSON.stringify({
+                    type: "done",
+                    hits: results,
+                    wallElapsedSec: Number((grindWallMs / 1000).toFixed(3)),
+                  }) + "\n",
+                ),
+              );
             } catch (e: unknown) {
               if (isGrindAbortError(e)) {
-                log.warn("http_grind_aborted", { prefix: go.prefix, ms: Date.now() - t0, stream: "ndjson" });
+                log.warn("http_grind_aborted", { prefix: goForGrind.prefix, ms: Date.now() - t0, stream: "ndjson" });
                 sseSend("status", { message: "grind_cancelled", ms: Date.now() - t0 });
                 await ndjsonWriter!.write(
                   ndjsonEnc.encode(
@@ -511,7 +651,7 @@ async function runServer() {
                 ).catch(() => {});
               } else {
                 const err = e instanceof Error ? e : new Error(String(e));
-                log.error("http_grind_failed", { prefix: go.prefix, ms: Date.now() - t0, stream: "ndjson" }, err);
+                log.error("http_grind_failed", { prefix: goForGrind.prefix, ms: Date.now() - t0, stream: "ndjson" }, err);
                 sseSend("status", { message: "grind_failed", error: err.message });
                 await ndjsonWriter!.write(ndjsonEnc.encode(JSON.stringify({ type: "error", message: err.message }) + "\n")).catch(
                   () => {},
@@ -537,17 +677,25 @@ async function runServer() {
         try {
           const results = await runGrindWithHandlers();
           await db.saveHits(results);
+          const grindWallMs = Date.now() - grindWall0;
           log.info("http_grind_ok", { hits: results.length, ms: Date.now() - t0 });
           sseSend("status", { message: "grind_complete", hits: results.length, ms: Date.now() - t0 });
-          return done(Response.json(results));
+          return done(
+            new Response(JSON.stringify(results), {
+              headers: {
+                "content-type": "application/json; charset=utf-8",
+                "x-grind-wall-ms": String(grindWallMs),
+              },
+            }),
+          );
         } catch (e: unknown) {
           if (isGrindAbortError(e)) {
-            log.warn("http_grind_aborted", { prefix: go.prefix, ms: Date.now() - t0 });
+            log.warn("http_grind_aborted", { prefix: goForGrind.prefix, ms: Date.now() - t0 });
             sseSend("status", { message: "grind_cancelled", ms: Date.now() - t0 });
             return done(Response.json({ error: "cancelled", message: "client disconnected or aborted" }, { status: 499 }));
           }
           const err = e instanceof Error ? e : new Error(String(e));
-          log.error("http_grind_failed", { prefix: go.prefix, ms: Date.now() - t0 }, err);
+          log.error("http_grind_failed", { prefix: goForGrind.prefix, ms: Date.now() - t0 }, err);
           sseSend("status", { message: "grind_failed", error: err.message });
           return done(Response.json({ error: err.message }, { status: 500 }));
         }

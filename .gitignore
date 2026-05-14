@@ -1,2 +1,15 @@
 node_modules
 .env
+
+# Local DB / KV / SQLite sidecars
+vanity.db
+vanity.db-shm
+vanity.db-wal
+vanity.kv
+vanity.kv-shm
+vanity.kv-wal
+
+# Default CLI output (regenerable)
+hits.jsonl
+bin.jsonl
+meth.jsonl
