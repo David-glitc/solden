@@ -5,7 +5,7 @@
 // Deno/Bun  : Web Worker API — self.onmessage / self.postMessage
 //
 // Node keygen : node:crypto generateKeyPairSync  ~13k kp/s per thread (native C)
-// Deno keygen : crypto.subtle.generateKey        ~4k kp/s per thread
+// Deno keygen : node:crypto when available; else crypto.subtle.generateKey (~4k kp/s)
 
 import type { WorkerInit, WorkerMsg } from "./types.ts";
 import { createLogger } from "./log.ts";
@@ -24,10 +24,16 @@ if (IS_NODE) {
   parentPort = wt.parentPort;
 }
 
-// ── crypto: import node:crypto at module level for Node/Bun ──────────────────
+// ── crypto: node:crypto fast path (Node, Bun, Deno with Node compat) ──────────
 let nodeCrypto: any = null;
-if (!IS_DENO) {
+try {
   nodeCrypto = await import("node:crypto");
+} catch {
+  nodeCrypto = null;
+}
+
+function useNodeKeygen(): boolean {
+  return nodeCrypto != null && typeof nodeCrypto.generateKeyPairSync === "function";
 }
 
 // ── messaging shim ────────────────────────────────────────────────────────────
@@ -139,7 +145,7 @@ async function loop() {
   let windowBestScore = -1;
   let windowBestAddr = "";
   while (true) {
-    const { pub, secret } = IS_DENO ? await denoPair() : nodePair();
+    const { pub, secret } = useNodeKeygen() ? nodePair() : await denoPair();
     const addr = b58(pub);
     const sc = scoreAddr(addr);
     if (sc > windowBestScore) {

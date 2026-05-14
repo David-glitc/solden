@@ -76,8 +76,54 @@ function formatPretty(ts: string, level: LogLevel, scope: string, msg: string, d
     level === "info" ? grn + level + rst :
     dim + level + rst;
   let s = `${dim}${ts}${rst} ${lvl} ${cyn}${scope}${rst} ${msg}`;
-  if (data && Object.keys(data).length) s += ` ${dim}${JSON.stringify(data)}${rst}`;
+  if (data && Object.keys(data).length) {
+    const ser = JSON.stringify(data);
+    const body = ser.length > 160 ? ser.slice(0, 157) + "…" : ser;
+    s += ` ${dim}${body}${rst}`;
+  }
   return s;
+}
+
+function logVerboseData(): boolean {
+  const v = env("LOG_VERBOSE");
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/** Wall-clock elapsed for pulses and UI: seconds → `59s` → `12m03s` → `1h02m15s`. */
+export function formatElapsedSeconds(totalSec: number): string {
+  if (!Number.isFinite(totalSec) || totalSec < 0) return "0s";
+  if (totalSec < 60) return totalSec < 10 ? `${totalSec.toFixed(1)}s` : `${Math.round(totalSec)}s`;
+  const t = Math.floor(totalSec);
+  const s = t % 60;
+  const m = Math.floor((t % 3600) / 60);
+  const h = Math.floor(t / 3600);
+  if (h === 0) return `${m}m${String(s).padStart(2, "0")}s`;
+  return `${h}h${String(m).padStart(2, "0")}m${String(s).padStart(2, "0")}s`;
+}
+
+function formatCliPulse(data: Record<string, unknown>): string {
+  const dim = "\x1b[2m", rst = "\x1b[0m", c = "\x1b[36m";
+  const tRaw = data.tSec ?? data.wallSec;
+  const tNum = typeof tRaw === "number" ? tRaw : parseFloat(String(tRaw ?? "0"));
+  const tLabel = Number.isFinite(tNum) ? formatElapsedSeconds(tNum) : String(tRaw ?? "?");
+  const w = data.w ?? data.workers ?? "?";
+  const chk = data.chk ?? data.totalChecked ?? 0;
+  const ik = data.instK ?? data.instKpsK ?? 0;
+  const ak = data.avgK ?? data.avgKpsK ?? 0;
+  const sc = data.score ?? data.bestScorePercent ?? 0;
+  const head = typeof data.addrHead === "string" && data.addrHead.length ? data.addrHead : "";
+  const addrPart = head ? `  ${dim}addr${rst} ${head}` : "";
+  const bestAcc = data.bestAcc ?? data.bestAccuracyPercent;
+  const runAvgAcc = data.runAvgAcc ?? data.runningAvgAccuracyPercent;
+  const mis = data.mis;
+  let accPart = "";
+  if (typeof bestAcc === "number" || typeof runAvgAcc === "number") {
+    const b = typeof bestAcc === "number" ? `${Number(bestAcc)}%` : "?";
+    const r = typeof runAvgAcc === "number" ? `${Number(runAvgAcc)}%` : "?";
+    accPart = `  acc=${b} ravg=${r}`;
+  }
+  const misPart = typeof mis === "string" && mis.length && mis !== "—" ? `  mis=${mis}` : "";
+  return `${dim}▣${rst} ${c}t=${tLabel}${rst}  workers=${w}  keys=${chk}  ${ik}k/s inst  ${ak}k/s avg  best=${sc}%${accPart}${misPart}${addrPart}`;
 }
 
 function emit(scope: string, level: LogLevel, msg: string, data?: Record<string, unknown>, err?: Error): void {
@@ -90,8 +136,15 @@ function emit(scope: string, level: LogLevel, msg: string, data?: Record<string,
     record.err = { name: err.name, message: err.message, stack: err.stack };
   }
   const json = forceJson || !stderrTTY();
-  if (json) writeStderrLine(JSON.stringify(record));
-  else writeStderrLine(formatPretty(ts, level, scope, msg, safeData));
+  const pulse = !json && level === "info" && safeData && !logVerboseData() &&
+    (msg === "cli_heartbeat" || msg === "http_grind_pulse");
+  if (pulse) {
+    writeStderrLine(formatCliPulse(safeData));
+  } else if (!json) {
+    writeStderrLine(formatPretty(ts, level, scope, msg, safeData));
+  } else {
+    writeStderrLine(JSON.stringify(record));
+  }
   try {
     const hook = (globalThis as any).__vanitySseBroadcast;
     if (typeof hook === "function") hook(record);
@@ -104,15 +157,9 @@ function detectRuntime(): string {
   return "node";
 }
 
-/** Call from main after parsing args; reads `LOG_LEVEL`, `LOG_JSON`. On Deno Deploy, defaults to `debug` when `LOG_LEVEL` is unset. */
+/** Reads `LOG_LEVEL`, `LOG_JSON`, `LOG_VERBOSE`. Deno Deploy uses the same defaults as local unless `LOG_LEVEL` is set. */
 export function initLoggingFromEnv(): void {
-  let raw = env("LOG_LEVEL");
-  if (!raw) {
-    try {
-      const id = (globalThis as any).Deno?.env?.get?.("DENO_DEPLOYMENT_ID");
-      if (id) raw = "debug";
-    } catch { /* no env cap */ }
-  }
+  const raw = env("LOG_LEVEL");
   minRank = LEVEL_RANK[parseLevel(raw ?? "info")];
   const j = env("LOG_JSON");
   forceJson = j === "1" || j === "true" || j === "yes";

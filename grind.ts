@@ -3,6 +3,7 @@ import type { GrindOpts, GrindResult, WorkerMsg } from "./types.ts";
 import { encryptKey } from "./crypto.ts";
 import { RUNTIME, resolveWorker } from "./runtime.ts";
 import { createLogger } from "./log.ts";
+import { evaluateWebGpuForGrind } from "./webgpu_env.ts";
 
 const log = createLogger("grind");
 
@@ -21,7 +22,9 @@ export async function grind(
   onProgress?: (msg: WorkerMsg & { type: "progress" }) => void,
   onThreshold?: (msg: WorkerMsg & { type: "threshold" }) => void,
   onBin?: (msg: WorkerMsg & { type: "bin" }) => void,
+  signal?: AbortSignal,
 ): Promise<GrindResult[]> {
+  const gpuCtx = await evaluateWebGpuForGrind(Boolean(opts.useWebgpu));
   const WorkerCtor = await getWorkerCtor();
   const rawEffective = RUNTIME === "bun"
     ? Math.max(1, Math.round(opts.threads * opts.bunOversubscribe))
@@ -35,6 +38,22 @@ export async function grind(
     let found = 0;
 
     const killAll = () => workers.forEach(w => w.terminate());
+
+    let cancelled = false;
+    const abortErr = () => new DOMException("Grind aborted", "AbortError");
+
+    const onAbort = () => {
+      cancelled = true;
+      killAll();
+      reject(abortErr());
+    };
+    if (signal) {
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     const progressSnapshot = new Map<number, { rate: number; checked: number }>();
     let bestScorePercent = 0;
@@ -54,21 +73,15 @@ export async function grind(
     }
 
     log.info("grind_start", {
-      threads: opts.threads,
-      effectiveWorkers,
-      rawEffective,
-      maxWorkers: maxCap,
-      bunOversubscribe: opts.bunOversubscribe,
+      workers: effectiveWorkers,
       count: opts.count,
-      prefix: opts.prefix,
-      suffix: opts.suffix,
-      caseSensitive: opts.caseSensitive,
-      threshold: opts.threshold,
-      encrypt: opts.encrypt,
-      progressEvery: opts.progressEvery,
+      pfxLen: opts.prefix.length,
+      sfxLen: opts.suffix.length,
+      gpu: gpuCtx.status,
     });
 
     for (let i = 0; i < effectiveWorkers; i++) {
+      if (cancelled) return;
       // Node: pass execArgv so TS stripping works inside the worker
       const workerOpts: any = { type: "module" };
       if (RUNTIME === "node") {
@@ -151,6 +164,7 @@ export async function grind(
           if (found >= opts.count) {
             log.info("grind_complete", { hits: results.length, workers: effectiveWorkers });
             killAll();
+            if (signal) signal.removeEventListener("abort", onAbort);
             resolve(results);
           }
         }
@@ -159,6 +173,7 @@ export async function grind(
           const err = new Error((msg as any).message);
           log.error("worker_message_error", { message: (msg as any).message }, err);
           killAll();
+          if (signal) signal.removeEventListener("abort", onAbort);
           reject(err);
         }
       };
@@ -169,6 +184,7 @@ export async function grind(
           const err = e instanceof Error ? e : new Error(String(e));
           log.error("worker_thread_error", { workerId: i }, err);
           killAll();
+          if (signal) signal.removeEventListener("abort", onAbort);
           reject(err);
         });
       }
@@ -176,6 +192,7 @@ export async function grind(
         const err = new Error(e.message || "worker error");
         log.error("worker_onerror", { workerId: i }, err);
         killAll();
+        if (signal) signal.removeEventListener("abort", onAbort);
         reject(err);
       }; }
     }

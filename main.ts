@@ -9,10 +9,29 @@
 import { RUNTIME, cpuCount, argv, exit, isTTY, writeStdout, stdoutColumns, openAppend, serveHttp } from "./runtime.ts";
 import { initDb }     from "./db.ts";
 import { grind }      from "./grind.ts";
-import { configureLogging, createLogger } from "./log.ts";
-import type { GrindOpts, GrindResult } from "./types.ts";
-import { UI_HTML } from "./ui.ts";
+import { configureLogging, createLogger, formatElapsedSeconds } from "./log.ts";
+import type { GrindOpts, GrindResult, WorkerMsg } from "./types.ts";
 import { LOGO_SVG } from "./brand.ts";
+
+const CONTROL_PANEL_HTML = new URL("./static/index.html", import.meta.url);
+let controlPanelHtmlCache: string | null = null;
+
+async function getControlPanelHtml(): Promise<string> {
+  if (controlPanelHtmlCache) return controlPanelHtmlCache;
+  const { fileURLToPath } = await import("node:url");
+  const panelPath = fileURLToPath(CONTROL_PANEL_HTML);
+  let html: string;
+  if (RUNTIME === "deno") {
+    html = await (globalThis as any).Deno.readTextFile(panelPath);
+  } else if (RUNTIME === "bun") {
+    html = await (globalThis as any).Bun.file(panelPath).text();
+  } else {
+    const { readFileSync } = await import("node:fs");
+    html = readFileSync(panelPath, "utf8");
+  }
+  controlPanelHtmlCache = html;
+  return html;
+}
 
 // ── arg parser (zero deps) ────────────────────────────────────────────────────
 function parseArgs(args: string[]): Record<string, string | boolean> {
@@ -35,6 +54,29 @@ function num(keys: string[], def: number) { const v = str(keys); return v ? pars
 function numf(keys: string[], def: number) { const v = str(keys); return v ? parseFloat(v) : def; }
 function flag(keys: string[])            { return keys.some(k => a[k] === true || a[k] === "true"); }
 
+function env(name: string): string | undefined {
+  if (typeof (globalThis as any).Deno !== "undefined") {
+    try { return (globalThis as any).Deno.env.get(name) ?? undefined; }
+    catch { return undefined; }
+  }
+  if (typeof process !== "undefined") return (process as any).env?.[name];
+  return undefined;
+}
+
+function webGpuWanted(): boolean {
+  const e = (env("VANITY_USE_WEBGPU") ?? "").trim().toLowerCase();
+  if (e === "0" || e === "false" || e === "off") return false;
+  if (e === "1" || e === "true" || e === "yes" || e === "auto") return true;
+  return flag(["use-webgpu", "W"]);
+}
+
+function resolveWebGpuForHttp(bodyFlag: boolean): boolean {
+  const e = (env("VANITY_USE_WEBGPU") ?? "").trim().toLowerCase();
+  if (e === "0" || e === "false" || e === "off") return false;
+  if (e === "1" || e === "true" || e === "yes" || e === "auto") return true;
+  return bodyFlag;
+}
+
 if (flag(["verbose", "v"])) configureLogging({ level: "debug" });
 const log = createLogger("main");
 
@@ -51,19 +93,12 @@ const opts: GrindOpts = {
   threshold:     num(["threshold",  "r"], 90),
   encrypt:       flag(["encrypt",   "e"]),
   decryptKey:    str(["decrypt-key","k"]),
+  useWebgpu:     webGpuWanted(),
 };
 
 const dbPath  = str(["db-path", "d"], "vanity.db");
 const outFile = str(["output",  "o"], "hits.jsonl");
 const binFile = str(["bin-jsonl", "f"], "bin.jsonl");
-function env(name: string): string | undefined {
-  if (typeof (globalThis as any).Deno !== "undefined") {
-    try { return (globalThis as any).Deno.env.get(name) ?? undefined; }
-    catch { return undefined; }
-  }
-  if (typeof process !== "undefined") return (process as any).env?.[name];
-  return undefined;
-}
 const portEnv = env("PORT");
 const port    = portEnv ? parseInt(portEnv, 10) : num(["port", "P"], 3737);
 const autoServer = Boolean(env("DENO_DEPLOYMENT_ID")) || env("SERVER_MODE") === "server";
@@ -85,7 +120,7 @@ OPTIONS
   -s, --suffix <str>        Target suffix             e.g. ic
   -n, --count  <int>        Addresses to find         [default: 1]
   -t, --threads <int>       Worker count              [default: all CPUs]
-  -B, --bun-oversubscribe <float>  Bun worker multiplier [default: 1.0]
+  -B, --bun-oversubscribe <float>  Bun only: multiply workers (ignored on Deno/Node)
   -g, --progress-every <int> Worker progress cadence  [default: 512]
   -u, --ui-refresh-ms <int> Progress redraw cadence   [default: 5000]
   -f, --bin-jsonl <path>    JSONL for scores 70–80%   [default: bin.jsonl]
@@ -95,13 +130,21 @@ OPTIONS
   -e, --encrypt             Encrypt private key (AES-256-GCM)
   -k, --decrypt-key <str>   Passphrase or 64-char hex AES key (blank=auto)
   -o, --output <path>       JSONL output file         [default: hits.jsonl]
-  -d, --db-path <path>      DB path (SQLite on Node/Bun; Deno KV file at <stem>.kv) [default: vanity.db]
+  -d, --db-path <path>      DB path (SQLite Node/Bun/Deno local; Deno Deploy uses KV) [default: vanity.db]
   -S, --server              HTTP server mode
   -P, --port <int>          Server port               [default: 3737]
   -v, --verbose             Debug logging (LOG_LEVEL=debug)
+  -W, --use-webgpu          Probe WebGPU (Deno local only; keygen stays CPU unless extended)
+
+DEV & LOGS
+  deno task server-ui       Restarts the server when project files change (uses deno run --watch).
+  Pass --watch only via this task; a stray --watch after the task name is treated as a main.ts argument and does nothing.
+  stderr lines are JSON when not on a color TTY: keys include ts, level, scope, msg, data.
+  POST /grind logs http_grind_post as soon as the request arrives; http_response logs only after the grind finishes.
 
 SERVER ENDPOINTS
-  GET  /                     Web control panel UI
+  GET  /                     Control panel (static/index.html)
+  GET  /index.html           Same HTML as /
   GET  /favicon.svg          App mark (also used as favicon)
   GET  /events              Server-Sent Events stream (logs/progress/status)
   GET  /system               Machine/runtime capabilities
@@ -116,16 +159,18 @@ RUNTIMES
   deno run --allow-read --allow-write --allow-net main.ts -p ATOM
 
 BUN SETUP (high concurrency presets)
-  deno task bun-grind -- -p meth -s ic -n 1 -t 16
-  deno task bun-fast  -- -p meth -s ic -n 1 -t 16
+  deno task bun-grind -p meth -s ic -n 1 -t 16
+  deno task bun-fast -p meth -s ic -n 1 -t 16
 
 DEPLOY (Deno Deploy)
   Set entrypoint to main.ts. When DENO_DEPLOYMENT_ID is set, server mode starts automatically.
   KV uses managed openKv() on deploy. Link a KV database in the Deploy dashboard.
 
 ENV (optional: add --allow-env to deno run if you want LOG_LEVEL / LOG_JSON from the environment)
-  LOG_LEVEL   trace | debug | info | warn | error   [default: info; on Deno Deploy: debug when unset]
+  LOG_LEVEL   trace | debug | info | warn | error   [default: info]
   LOG_JSON    1 | true — force JSON lines (no TTY colors)
+  LOG_VERBOSE 1 | true — full JSON on stderr (default: compact heartbeat on TTY)
+  VANITY_USE_WEBGPU  0|off|false | 1|true|auto — probe GPU on Deno local (needs -W or this env; deno task grind-gpu passes -W and --unstable-webgpu)
   ACCESS_CONTROL_ALLOW_ORIGIN  e.g. https://your-site.vercel.app — enables CORS on /system, /events, /grind, /health (host UI elsewhere)
 
 DECRYPT
@@ -273,8 +318,8 @@ async function runServer() {
         }));
       }
 
-      if (req.method === "GET" && url.pathname === "/")
-        return done(new Response(UI_HTML, { headers: { "content-type": "text/html; charset=utf-8" } }));
+      if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html"))
+        return done(new Response(await getControlPanelHtml(), { headers: { "content-type": "text/html; charset=utf-8" } }));
 
       if (req.method === "GET" && url.pathname === "/events") {
         const stream = new TransformStream<Uint8Array, Uint8Array>();
@@ -305,6 +350,12 @@ async function runServer() {
         return done(Response.json(await db.getHits()));
 
       if (req.method === "POST" && url.pathname === "/grind") {
+        log.info("http_grind_post", {
+          origin: req.headers.get("origin") ?? null,
+          contentLength: req.headers.get("content-length") ?? null,
+          acceptNdjson: (req.headers.get("accept") ?? "").toLowerCase().includes("application/x-ndjson"),
+          note: "response may stream NDJSON when Accept includes application/x-ndjson",
+        });
         let body: Partial<GrindOpts>;
         try { body = await req.json(); }
         catch {
@@ -312,12 +363,13 @@ async function runServer() {
           return done(Response.json({ error: "invalid JSON" }, { status: 400 }));
         }
 
+        const scaleRaw = (body as Record<string, unknown>).threadsMultiplier ?? body.bunOversubscribe;
         const go: GrindOpts = {
           prefix:        String(body.prefix ?? "").trim(),
           suffix:        String(body.suffix ?? "").trim(),
           count:         Math.max(1, Math.min(1_000_000, Number(body.count) || 1)),
           threads:       Math.max(1, Math.min(512, Number(body.threads) || cpuCount)),
-          bunOversubscribe: Math.max(0.1, Number(body.bunOversubscribe) || 1),
+          bunOversubscribe: Math.max(0.1, Number(scaleRaw) || 1),
           progressEvery: Math.max(64, Math.min(10_000_000, Number(body.progressEvery) || 512)),
           uiRefreshMs:   Math.max(25, Math.min(60_000, Number(body.uiRefreshMs) || 100)),
           maxWorkers:    Math.max(1, Math.min(1024, Number(body.maxWorkers) || 256)),
@@ -325,26 +377,156 @@ async function runServer() {
           threshold:     Math.max(0, Math.min(100, Number(body.threshold) || 90)),
           encrypt:       Boolean(body.encrypt),
           decryptKey:    String(body.decryptKey ?? ""),
+          useWebgpu:     resolveWebGpuForHttp(Boolean(body.useWebgpu)),
         };
 
-        if (!go.prefix && !go.suffix)
+        if (!go.prefix && !go.suffix) {
+          log.warn("http_grind_reject_empty_pattern", { origin: req.headers.get("origin") ?? null });
           return done(Response.json({ error: "prefix or suffix required" }, { status: 400 }));
+        }
 
-        log.info("http_grind", { prefix: go.prefix, suffix: go.suffix, count: go.count, threads: go.threads });
+        const rawHttpWorkers = RUNTIME === "bun"
+          ? Math.max(1, Math.round(go.threads * go.bunOversubscribe))
+          : Math.max(1, go.threads);
+        const httpEffWorkers = Math.min(rawHttpWorkers, Math.max(1, go.maxWorkers));
+
+        log.info("http_grind", {
+          prefix: go.prefix,
+          suffix: go.suffix,
+          count: go.count,
+          threads: go.threads,
+          effectiveWorkers: httpEffWorkers,
+          useWebgpu: go.useWebgpu,
+          origin: req.headers.get("origin") ?? null,
+          referer: (req.headers.get("referer") ?? "").slice(0, 120) || null,
+        });
         sseSend("status", { message: "grind_started", opts: { ...go, decryptKey: undefined } });
 
-        try {
-          const results = await grind(
+        const grindWall0 = Date.now();
+        let lastGrindLogMs = 0;
+        const GRIND_LOG_INTERVAL_MS = 5000;
+        const wantNdjson = (req.headers.get("accept") ?? "").toLowerCase().includes("application/x-ndjson");
+        let ndjsonWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
+        const ndjsonEnc = new TextEncoder();
+
+        const onHttpProgress = (msg: WorkerMsg & { type: "progress" }) => {
+          const now = Date.now();
+          const wallSec = Math.max(0.001, (now - grindWall0) / 1000);
+          const tc = msg.totalChecked ?? 0;
+          const avgKpsWall = tc / wallSec;
+          const payload = {
+            ...msg,
+            avgKpsWall,
+            wallElapsedSec: Number(wallSec.toFixed(2)),
+          };
+          sseSend("progress", payload);
+          if (ndjsonWriter) {
+            void ndjsonWriter.write(ndjsonEnc.encode(JSON.stringify(payload) + "\n")).catch(() => {});
+          }
+          if (now - lastGrindLogMs < GRIND_LOG_INTERVAL_MS) return;
+          lastGrindLogMs = now;
+          const elapsedSec = wallSec;
+          const avgK = avgKpsWall / 1000;
+          const instK = (msg.aggregateKps ?? 0) / 1000;
+          const addr = msg.bestAddress ?? "";
+          const addrHead = addr.length > 12 ? `${addr.slice(0, 6)}…${addr.slice(-6)}` : (addr || "");
+          const pLen = go.prefix.length;
+          const fi = msg.firstMismatchIndex ?? -1;
+          const li = msg.lastMismatchIndex ?? -1;
+          const misCell = (i: number) => {
+            if (i < 0) return "—";
+            if (i < pLen) return `P${i}`;
+            return `S${i - pLen}`;
+          };
+          const misPulse = fi < 0 && li < 0 ? "—" : `${misCell(fi)}→${misCell(li)}`;
+          log.info("http_grind_pulse", {
+            elapsed: formatElapsedSeconds(elapsedSec),
+            tSec: Number(elapsedSec.toFixed(1)),
+            w: msg.effectiveWorkers,
+            chk: tc,
+            instK: Number(instK.toFixed(2)),
+            avgK: Number(avgK.toFixed(2)),
+            score: msg.bestScorePercent,
+            bestAcc: msg.bestAccuracyPercent,
+            runAvgAcc: msg.runningAvgAccuracyPercent,
+            mis: misPulse,
+            addrHead: addrHead || undefined,
+          });
+        };
+
+        const runGrindWithHandlers = async () => {
+          return await grind(
             go,
-            (msg) => sseSend("progress", msg),
+            onHttpProgress,
             (msg) => sseSend("threshold", { workerId: msg.workerId, score: msg.score, address: msg.address }),
             (msg) => sseSend("bin", { workerId: msg.workerId, score: msg.score, address: msg.address }),
+            req.signal,
           );
+        };
+
+        const isGrindAbortError = (e: unknown) =>
+          (typeof DOMException !== "undefined" && e instanceof DOMException && e.name === "AbortError") ||
+          (e instanceof Error && e.name === "AbortError");
+
+        if (wantNdjson) {
+          const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
+          ndjsonWriter = writable.getWriter();
+          void (async () => {
+            try {
+              const results = await runGrindWithHandlers();
+              await db.saveHits(results);
+              log.info("http_grind_ok", { hits: results.length, ms: Date.now() - t0, stream: "ndjson" });
+              sseSend("status", { message: "grind_complete", hits: results.length, ms: Date.now() - t0 });
+              await ndjsonWriter!.write(ndjsonEnc.encode(JSON.stringify({ type: "done", hits: results }) + "\n"));
+            } catch (e: unknown) {
+              if (isGrindAbortError(e)) {
+                log.warn("http_grind_aborted", { prefix: go.prefix, ms: Date.now() - t0, stream: "ndjson" });
+                sseSend("status", { message: "grind_cancelled", ms: Date.now() - t0 });
+                await ndjsonWriter!.write(
+                  ndjsonEnc.encode(
+                    JSON.stringify({
+                      type: "cancelled",
+                      message: "client disconnected or aborted",
+                    }) + "\n",
+                  ),
+                ).catch(() => {});
+              } else {
+                const err = e instanceof Error ? e : new Error(String(e));
+                log.error("http_grind_failed", { prefix: go.prefix, ms: Date.now() - t0, stream: "ndjson" }, err);
+                sseSend("status", { message: "grind_failed", error: err.message });
+                await ndjsonWriter!.write(ndjsonEnc.encode(JSON.stringify({ type: "error", message: err.message }) + "\n")).catch(
+                  () => {},
+                );
+              }
+            } finally {
+              try {
+                await ndjsonWriter?.close();
+              } catch { /* ignore */ }
+              ndjsonWriter = null;
+            }
+          })();
+          return done(new Response(readable, {
+            status: 200,
+            headers: {
+              "content-type": "application/x-ndjson; charset=utf-8",
+              "cache-control": "no-cache, no-transform",
+              "x-accel-buffering": "no",
+            },
+          }));
+        }
+
+        try {
+          const results = await runGrindWithHandlers();
           await db.saveHits(results);
           log.info("http_grind_ok", { hits: results.length, ms: Date.now() - t0 });
           sseSend("status", { message: "grind_complete", hits: results.length, ms: Date.now() - t0 });
           return done(Response.json(results));
         } catch (e: unknown) {
+          if (isGrindAbortError(e)) {
+            log.warn("http_grind_aborted", { prefix: go.prefix, ms: Date.now() - t0 });
+            sseSend("status", { message: "grind_cancelled", ms: Date.now() - t0 });
+            return done(Response.json({ error: "cancelled", message: "client disconnected or aborted" }, { status: 499 }));
+          }
           const err = e instanceof Error ? e : new Error(String(e));
           log.error("http_grind_failed", { prefix: go.prefix, ms: Date.now() - t0 }, err);
           sseSend("status", { message: "grind_failed", error: err.message });
@@ -356,7 +538,7 @@ async function runServer() {
     } catch (e: unknown) {
       const err = e instanceof Error ? e : new Error(String(e));
       log.error("http_unhandled", { method: req.method, path: url.pathname, ms: Date.now() - t0 }, err);
-      return Response.json({ error: err.message }, { status: 500 });
+      return done(Response.json({ error: err.message }, { status: 500 }));
     }
   });
 }
@@ -416,7 +598,7 @@ async function runCli() {
     console.log(`\x1b[2m│ ${k.padEnd(kW)} │ ${vv.padEnd(vW)} │\x1b[0m`);
   }
   console.log(`\x1b[2m└${bar(kW + 2)}┴${bar(vW + 2)}┘\x1b[0m`);
-  console.log("\x1b[2mLive table: stdout (2 lines max) · stderr: structured logs + 5s heartbeat with full telemetry.\x1b[0m");
+  console.log("\x1b[2mLive: stdout (one progress line) · stderr: JSON or compact 5s pulse (set LOG_VERBOSE=1 for full heartbeat JSON on TTY).\x1b[0m");
   console.log("\x1b[2mMis Pk→Sn: first/last mismatch vs target (P=prefix index, S=suffix index). Example P0→P0 = only first char differs.\x1b[0m");
   console.log("\x1b[2mVanity search is random valid Ed25519 keys; you cannot “walk” base58 toward a prefix and stay on-curve.\x1b[0m\n");
 
@@ -457,12 +639,12 @@ async function runCli() {
     runningAvgAccuracyPercent: 0,
   };
 
-  let progressLinesPrimed = false;
-  function renderProgressTwoLines() {
+  let progressLinePrimed = false;
+  function renderProgressLine() {
     if (!isTTY) return;
-    if (!progressLinesPrimed) {
-      writeStdout("\n\n\x1b[2A");
-      progressLinesPrimed = true;
+    if (!progressLinePrimed) {
+      writeStdout("\n\x1b[1A");
+      progressLinePrimed = true;
     }
     const W = stdoutColumns();
     const wallSec = Math.max(0.001, (Date.now() - t0) / 1000);
@@ -473,48 +655,37 @@ async function runCli() {
       : "n/a";
     const mis = formatMismatch(snap.firstMismatchIndex, snap.lastMismatchIndex, opts.prefix.length, opts.suffix.length);
     const dim = "\x1b[2m", rst = "\x1b[0m", bar = "\x1b[36m│\x1b[0m";
-    const row1Raw =
-      `${bar}${String(snap.effectiveWorkers).padStart(2)}w${bar}` +
-      `${instKps.toFixed(1)}k ins${bar}${avgKps.toFixed(1)}k avg${bar}` +
-      `${snap.totalChecked.toLocaleString()} chk${bar}` +
-      `sc ${snap.bestScorePercent}%${bar}acc ${accChunk}${bar}mis ${mis}${bar}ravg ${snap.runningAvgAccuracyPercent}%${bar}`;
     const clip = (s: string, max: number) => (s.length <= max ? s : s.slice(0, Math.max(0, max - 1)) + "…");
-    const row1 = clip(row1Raw, W);
-    const pfx = snap.bestPrefixWindow || "—";
-    const sfx = snap.bestSuffixWindow || "—";
-    const addr = snap.bestAddress ? clip(snap.bestAddress, Math.min(52, Math.max(20, W - 36))) : "—";
-    const row2Raw = `${dim}best windows${rst} ${bar} pfx ${pfx} ${bar} sfx ${sfx} ${bar} ${addr} ${bar}`;
-    const row2 = clip(row2Raw, W);
-    writeStdout(`\r\x1b[2K${row1}\n\r\x1b[2K${row2}\n\x1b[2A`);
+    const lineRaw =
+      `${dim}t=${formatElapsedSeconds(wallSec)}${rst}${bar}` +
+      `${String(snap.effectiveWorkers).padStart(2)}w${bar}` +
+      `${snap.totalChecked.toLocaleString()} keys${bar}` +
+      `${instKps.toFixed(1)}/${avgKps.toFixed(1)}k/s${bar}` +
+      `sc ${snap.bestScorePercent}%${bar}acc ${accChunk}${bar}mis ${mis}${bar}ravg ${snap.runningAvgAccuracyPercent}%`;
+    writeStdout(`\r\x1b[2K${clip(lineRaw, W)}`);
   }
 
   let spin: ReturnType<typeof setInterval> | undefined;
-  if (isTTY) spin = setInterval(renderProgressTwoLines, Math.max(50, opts.uiRefreshMs | 0));
+  if (isTTY) spin = setInterval(renderProgressLine, Math.max(50, opts.uiRefreshMs | 0));
 
   const HEARTBEAT_MS = 5000;
   const hb = setInterval(() => {
     const wallSec = Math.max(0.001, (Date.now() - t0) / 1000);
     const avgKps = snap.totalChecked / wallSec / 1000;
     const instKps = snap.aggregateKps / 1000;
-    const mis = formatMismatch(snap.firstMismatchIndex, snap.lastMismatchIndex, opts.prefix.length, opts.suffix.length);
+    const ba = snap.bestAddress ?? "";
+    const addrHead = ba.length > 12 ? `${ba.slice(0, 6)}…${ba.slice(-6)}` : ba;
     log.info("cli_heartbeat", {
-      wallSec: Number(wallSec.toFixed(1)),
-      workers: snap.effectiveWorkers,
-      totalChecked: snap.totalChecked,
-      instKpsK: Number(instKps.toFixed(2)),
-      avgKpsK: Number(avgKps.toFixed(2)),
-      bestScorePercent: snap.bestScorePercent,
-      bestAccuracyPercent: snap.bestAccuracyPercent,
-      matchedTarget: `${snap.bestMatchedTargetChars}/${snap.bestTargetLen}`,
-      mis,
-      bestPrefixWindow: snap.bestPrefixWindow,
-      bestSuffixWindow: snap.bestSuffixWindow,
-      bestAddressHead: snap.bestAddress ? snap.bestAddress.slice(0, 8) + "…" + snap.bestAddress.slice(-6) : "",
-      runningAvgAccuracyPercent: snap.runningAvgAccuracyPercent,
-      patternPrefix: opts.prefix,
-      patternSuffix: opts.suffix,
-      outFile,
-      binFile,
+      tSec: Number(wallSec.toFixed(1)),
+      w: snap.effectiveWorkers,
+      chk: snap.totalChecked,
+      instK: Number(instKps.toFixed(2)),
+      avgK: Number(avgKps.toFixed(2)),
+      score: snap.bestScorePercent,
+      bestAcc: snap.bestAccuracyPercent,
+      runAvgAcc: snap.runningAvgAccuracyPercent,
+      mis: formatMismatch(snap.firstMismatchIndex, snap.lastMismatchIndex, opts.prefix.length, opts.suffix.length),
+      addrHead: addrHead || undefined,
     });
   }, HEARTBEAT_MS);
 
@@ -539,7 +710,7 @@ async function runCli() {
             snap.lastMismatchIndex = msg.lastMismatchIndex ?? snap.lastMismatchIndex;
             snap.runningAvgAccuracyPercent = msg.runningAvgAccuracyPercent ?? snap.runningAvgAccuracyPercent;
           }
-          renderProgressTwoLines();
+          renderProgressLine();
         }
       },
       (msg) => {
@@ -563,7 +734,7 @@ async function runCli() {
 
   log.info("cli_grind_finished", { hits: results.length, ms: Date.now() - t0 });
 
-  if (isTTY && progressLinesPrimed) writeStdout("\x1b[2B\r\x1b[2K\n\r\x1b[2K\n");
+  if (isTTY && progressLinePrimed) writeStdout("\x1b[1B\r\x1b[2K\n");
   else if (isTTY) writeStdout("\r" + " ".repeat(Math.min(100, stdoutColumns())) + "\r");
 
   await db.saveHits(results);

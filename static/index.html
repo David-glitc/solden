@@ -1,0 +1,1214 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0a0a" />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+    <title>Solden · Sol vanity</title>
+    <style>
+         :root {
+            --ink: #0a0a0a;
+            --paper: #ffffff;
+            --muted: #5c5c5c;
+            --line: #d9d9d9;
+            --surface: #f6f6f6;
+            --radius-lg: 18px;
+            --radius-md: 12px;
+            --shadow: 0 8px 28px rgba(0, 0, 0, .08);
+            --touch-min: 48px;
+            --ok: #0d7a3e;
+            --err: #b42318;
+        }
+        
+        * {
+            box-sizing: border-box;
+        }
+        
+        html {
+            -webkit-text-size-adjust: 100%;
+        }
+        
+        body {
+            margin: 0;
+            font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.5;
+            color: var(--ink);
+            background: linear-gradient(160deg, #f0f0f0 0%, #fafafa 40%, #fff 100%);
+            min-height: 100dvh;
+            overflow-x: clip;
+            -webkit-tap-highlight-color: rgba(10, 10, 10, 0.08);
+        }
+        
+        .shell {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+        }
+        
+        header {
+            background: linear-gradient(155deg, #121212 0%, #0a0a0a 55%, #101010 100%);
+            color: var(--paper);
+            border-radius: var(--radius-lg);
+            padding: 22px 26px;
+            margin-bottom: 22px;
+            box-shadow: var(--shadow);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .brand-lockup {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+            width: 100%;
+        }
+        
+        .brand-mark {
+            flex: 0 0 auto;
+            line-height: 0;
+        }
+        
+        .brand-mark-inner {
+            display: inline-block;
+            background: #fff;
+            border-radius: 16px;
+            padding: 10px 12px;
+            border: 1px solid #e8e8e8;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, .15);
+        }
+        
+        .brand-mark-inner img {
+            width: clamp(44px, 12vw, 64px);
+            height: auto;
+            display: block;
+            vertical-align: top;
+        }
+        
+        .brand-copy {
+            min-width: 0;
+            flex: 1;
+        }
+        
+        .brand-kicker {
+            margin: 0 0 6px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            opacity: 0.72;
+        }
+        
+        header h1 {
+            margin: 0;
+            font-size: 1.42rem;
+            font-weight: 650;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+        
+        .brand-desc {
+            margin: 10px 0 0;
+            font-size: 0.92rem;
+            opacity: 0.88;
+            max-width: 56ch;
+            line-height: 1.45;
+        }
+        
+        .header-pill {
+            margin-left: auto;
+            flex-shrink: 0;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            color: #f0f0f0;
+        }
+        
+        .server-bar {
+            font-size: 0.82rem;
+            color: var(--muted);
+            margin: -8px 0 18px;
+            padding: 8px 12px;
+            background: var(--paper);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+        }
+        
+        .error-banner {
+            background: #fde8e6;
+            border: 1px solid #f5c4c0;
+            color: var(--err);
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            margin-bottom: 16px;
+            font-size: 0.92rem;
+        }
+        
+        .error-banner[hidden] {
+            display: none !important;
+        }
+        
+        .grid {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        
+        @media (max-width: 520px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .card {
+            min-width: 0;
+            background: var(--paper);
+            border: 1px solid var(--line);
+            border-radius: var(--radius-lg);
+            padding: 18px 20px;
+            box-shadow: var(--shadow);
+        }
+        
+        .card h3 {
+            margin: 0 0 12px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+        
+        .card .body {
+            font-size: 0.95rem;
+            line-height: 1.55;
+        }
+        
+        .row>div>label {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--muted);
+            margin-bottom: 6px;
+            cursor: help;
+        }
+        
+        input,
+        select,
+        button {
+            width: 100%;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
+            background: var(--paper);
+            color: var(--ink);
+            padding: 11px 14px;
+            font-size: 1rem;
+            min-height: 44px;
+        }
+        
+        input:focus,
+        select:focus,
+        button:focus-visible {
+            outline: 2px solid var(--ink);
+            outline-offset: 2px;
+        }
+        
+        .row {
+            display: grid;
+            gap: 14px 16px;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+        
+        @media (max-width: 900px) {
+            .row {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        
+        @media (max-width: 520px) {
+            .row {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .checks {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 18px;
+            padding-top: 4px;
+        }
+        
+        .checks label {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 10px;
+            margin: 0;
+            text-transform: none;
+            font-size: 0.92rem;
+            font-weight: 500;
+            letter-spacing: 0;
+            color: var(--ink);
+            cursor: pointer;
+        }
+        
+        .checks input {
+            width: 22px;
+            height: 22px;
+            min-width: 22px;
+            min-height: 22px;
+            flex-shrink: 0;
+            accent-color: var(--ink);
+        }
+        
+        .grind-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            margin-top: 16px;
+        }
+        
+        #cancelGrindBtn {
+            max-width: 160px;
+            background: var(--paper);
+            color: var(--ink);
+            border: 2px solid var(--line);
+            font-weight: 650;
+            border-radius: 999px;
+            cursor: pointer;
+            min-height: var(--touch-min);
+        }
+        
+        #cancelGrindBtn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+        }
+        
+        #startBtn {
+            max-width: 220px;
+            width: 100%;
+            background: var(--ink);
+            color: var(--paper);
+            border: none;
+            font-weight: 650;
+            padding: 14px 20px;
+            border-radius: 999px;
+            cursor: pointer;
+            min-height: var(--touch-min);
+        }
+        
+        #startBtn:disabled {
+            opacity: .55;
+            cursor: not-allowed;
+        }
+        
+        .grind-progress {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--ink);
+        }
+        
+        .grind-progress[hidden] {
+            display: none !important;
+        }
+        
+        .spinner {
+            width: 22px;
+            height: 22px;
+            border: 3px solid var(--line);
+            border-top-color: var(--ink);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+        
+        #grindTimer {
+            font-variant-numeric: tabular-nums;
+            min-width: 4.5ch;
+        }
+        
+        .hint-short {
+            margin-top: 12px;
+            font-size: 0.86rem;
+            color: var(--muted);
+        }
+        
+        .mono {
+            font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+            font-size: 0.88rem;
+            letter-spacing: 0.01em;
+            word-break: break-all;
+        }
+        
+        .live-big {
+            font-size: 1.35rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1.3;
+            margin: 4px 0 6px;
+        }
+        
+        .stat-sub {
+            font-size: 0.82rem;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+        
+        @keyframes liveFlash {
+            0% {
+                box-shadow: 0 0 0 0 rgba(13, 122, 62, 0.35);
+            }
+            100% {
+                box-shadow: 0 0 0 0 transparent;
+            }
+        }
+        
+        .card.stat-pulse {
+            animation: liveFlash 0.45s ease-out;
+        }
+        
+        #throughput,
+        #difficulty,
+        #accuracy {
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+        
+        #accuracy {
+            white-space: pre-line;
+        }
+        
+        .results-card[hidden] {
+            display: none !important;
+        }
+        
+        .hit-block {
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-bottom: 14px;
+            background: var(--surface);
+        }
+        
+        .hit-block:last-child {
+            margin-bottom: 0;
+        }
+        
+        .hit-block h4 {
+            margin: 0 0 12px;
+            font-size: 1rem;
+            color: var(--ink);
+        }
+        
+        .kv {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 8px 10px;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+        
+        .kv:last-child {
+            margin-bottom: 0;
+        }
+        
+        .kv .k {
+            color: var(--muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            padding-top: 4px;
+        }
+        
+        .kv .v {
+            min-width: 0;
+        }
+        
+        .btn-ghost,
+        .btn-sm {
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--line);
+            background: var(--paper);
+            color: var(--ink);
+            width: auto;
+            min-height: 36px;
+        }
+        
+        .btn-ghost:hover,
+        .btn-sm:hover {
+            background: #f0f0f0;
+        }
+        
+        .download-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        
+        .download-row .btn-sm {
+            width: auto;
+        }
+        
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--ink);
+            color: var(--paper);
+            padding: 12px 20px;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: var(--shadow);
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s;
+        }
+        
+        .toast.show {
+            opacity: 1;
+        }
+        
+        .site-footer {
+            margin-top: 28px;
+            padding: 18px 22px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--line);
+            background: var(--paper);
+            box-shadow: var(--shadow);
+            font-size: 0.9rem;
+            color: var(--muted);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px 18px;
+        }
+        
+        .site-footer a {
+            color: var(--ink);
+            font-weight: 600;
+            text-decoration: none;
+            border-bottom: 1px solid var(--line);
+        }
+        
+        .site-footer a:hover {
+            border-bottom-color: var(--ink);
+        }
+        
+        details.diag-card {
+            margin-top: 16px;
+        }
+        
+        details.diag-card summary {
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--muted);
+            padding: 8px 0;
+        }
+        
+        #diagLog {
+            margin: 0;
+            max-height: 160px;
+            overflow: auto;
+            font-size: 0.78rem;
+            color: var(--muted);
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        
+        @media (max-width: 640px) {
+            body {
+                font-size: 16px;
+            }
+            .shell {
+                padding-left: max(12px, env(safe-area-inset-left));
+                padding-right: max(12px, env(safe-area-inset-right));
+            }
+            header {
+                padding: 18px;
+                border-radius: 14px;
+            }
+            .brand-lockup {
+                flex-wrap: wrap;
+                gap: 14px;
+            }
+            .header-pill {
+                margin-left: 0;
+            }
+            header h1 {
+                font-size: 1.2rem;
+            }
+            #startBtn {
+                max-width: none;
+            }
+            .kv {
+                grid-template-columns: 1fr;
+            }
+            .kv .btn-sm {
+                justify-self: start;
+            }
+        }
+        
+        @media (min-width: 641px) {
+            #startBtn {
+                width: auto;
+            }
+        }
+    </style>
+</head>
+
+<body data-api-base="">
+    <div class="shell">
+        <header>
+            <div class="brand-lockup">
+                <div class="brand-mark">
+                    <div class="brand-mark-inner">
+                        <img src="/favicon.svg" width="56" height="56" alt="" decoding="async" />
+                    </div>
+                </div>
+                <div class="brand-copy">
+                    <p class="brand-kicker">Solden</p>
+                    <h1>Sol vanity</h1>
+                    <p class="brand-desc">Find Solana addresses matching a prefix or suffix. Runs on the server you opened this page from.</p>
+                </div>
+                <span class="header-pill" title="HTML from this server; grind API on same host unless API base is set">Live</span>
+            </div>
+        </header>
+
+        <div id="serverBar" class="server-bar" role="status">Connecting…</div>
+        <div id="errorBanner" class="error-banner" hidden></div>
+
+        <div class="grid">
+            <div class="card" id="cardThroughput">
+                <h3>Throughput</h3>
+                <div id="throughputLive" class="live-big mono">—</div>
+                <div id="throughputSub" class="stat-sub">Live from server: HTTP NDJSON stream + SSE</div>
+            </div>
+            <div class="card" id="cardDifficulty">
+                <h3>Difficulty</h3>
+                <div id="difficulty" class="mono body">—</div>
+                <div class="stat-sub">ETA uses live average keys/s when available</div>
+            </div>
+            <div class="card" id="cardBest">
+                <h3>Best candidate</h3>
+                <div id="bestScoreLive" class="live-big mono">—</div>
+                <div id="accuracy" class="mono stat-sub">—</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:18px">
+            <h3>Grind</h3>
+            <div class="row">
+                <div><label title="Base58 characters to match at the start of the address">Prefix</label><input id="prefix" value="meth" autocomplete="off" /></div>
+                <div><label title="Base58 characters to match at the end of the address">Suffix</label><input id="suffix" value="" autocomplete="off" /></div>
+                <div><label title="How many matching addresses to find this run">Count</label><input id="count" type="number" min="1" value="1" /></div>
+                <div><label title="Parallel worker processes on the server">Threads</label><input id="threads" type="number" min="1" value="16" /></div>
+                <div><label title="Emit near-miss events when score ≥ this %">Threshold %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
+                <div><label title="Each worker sends progress every N key tries (lower = more frequent UI updates)">Progress every</label><input id="progressEvery" type="number" min="64" value="512" /></div>
+                <div><label title="Server compatibility field">UI refresh ms</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
+                <div><label title="Maximum parallel workers this run">Max workers</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
+                <div class="checks" style="grid-column: 1 / -1">
+                    <label title="Match exact character case for prefix/suffix"><input id="caseSensitive" type="checkbox" /> Case-sensitive</label>
+                    <label title="Return secret key encrypted; you will need the decrypt key shown in results"><input id="encrypt" type="checkbox" /> Encrypt keys</label>
+                    <label title="Deno local only: ask server to probe WebGPU (keygen stays on CPU)"><input id="useWebgpu" type="checkbox" /> Probe WebGPU</label>
+                </div>
+            </div>
+            <div class="grind-actions">
+                <button type="button" id="startBtn">Start grind</button>
+                <button type="button" id="cancelGrindBtn" disabled>Cancel</button>
+                <div id="grindProgress" class="grind-progress" hidden>
+                    <span class="spinner" aria-hidden="true"></span>
+                    <span id="grindTimer">0:00</span>
+                    <span id="grindProgressLabel">Searching…</span>
+                </div>
+            </div>
+            <p class="hint-short">Set at least a prefix <em>or</em> suffix. Hover labels for tips.</p>
+        </div>
+
+        <div id="resultsSection" class="card results-card" style="margin-top:18px" hidden>
+            <h3>Results</h3>
+            <div id="resultsInner"></div>
+            <div class="download-row">
+                <button type="button" class="btn-sm" id="btnCopyHits" title="Copy full JSON array to clipboard">Copy JSON</button>
+                <button type="button" class="btn-sm" id="btnDlJson" title="Pretty JSON array file">Download .json</button>
+                <button type="button" class="btn-sm" id="btnDlJsonl" title="One JSON object per line (same style as hits.jsonl)">Download .jsonl</button>
+                <button type="button" class="btn-sm" id="btnDlKeypair" title="Solana CLI format: JSON array of 64 secret key bytes (first wallet only, plaintext)">Download keypair.json</button>
+            </div>
+        </div>
+
+        <details class="card diag-card" style="margin-top:16px">
+            <summary>Technical diagnostics</summary>
+            <pre id="diagLog" class="mono"></pre>
+        </details>
+
+        <footer class="site-footer">
+            <span>David Pere</span>
+            <a href="https://davidpere.vercel.app" target="_blank" rel="noopener noreferrer">davidpere</a>
+            <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">X · @davidpereishim</a>
+            <a href="https://github.com/David-glitc/solden" target="_blank" rel="noopener noreferrer">Source · solden</a>
+        </footer>
+    </div>
+    <div id="toast" class="toast" role="status"></div>
+
+    <script>
+        (function() {
+            const q = function(id) {
+                return document.getElementById(id);
+            };
+            const throughputLive = q("throughputLive");
+            const throughputSub = q("throughputSub");
+            const difficulty = q("difficulty");
+            const bestScoreLive = q("bestScoreLive");
+            const accuracy = q("accuracy");
+            const startBtn = q("startBtn");
+            const cancelGrindBtn = q("cancelGrindBtn");
+            const grindProgress = q("grindProgress");
+            const grindTimer = q("grindTimer");
+            const grindProgressLabel = q("grindProgressLabel");
+            const resultsSection = q("resultsSection");
+            const resultsInner = q("resultsInner");
+            const errorBanner = q("errorBanner");
+            const serverBar = q("serverBar");
+            const diagLog = q("diagLog");
+            const toastEl = q("toast");
+            let streamInstKps = 0;
+            let streamAvgKps = 0;
+            let lastHits = [];
+            let timerId = null;
+            let grindStartedAt = 0;
+
+            var API_BASE = (document.body.getAttribute("data-api-base") || "").trim();
+            if (API_BASE.endsWith("/")) API_BASE = API_BASE.slice(0, -1);
+
+            function apiUrl(path) {
+                if (path.charAt(0) !== "/") path = "/" + path;
+                return API_BASE ? (API_BASE + path) : path;
+            }
+
+            function showError(msg) {
+                if (!errorBanner) return;
+                errorBanner.textContent = msg;
+                errorBanner.hidden = false;
+            }
+
+            function clearError() {
+                if (errorBanner) errorBanner.hidden = true;
+            }
+
+            function diagLine(msg) {
+                if (!diagLog) return;
+                diagLog.textContent += new Date().toLocaleTimeString() + " " + msg + "\n";
+                diagLog.scrollTop = diagLog.scrollHeight;
+            }
+
+            function toast(msg) {
+                if (!toastEl) return;
+                toastEl.textContent = msg;
+                toastEl.classList.add("show");
+                clearTimeout(toastEl._t);
+                toastEl._t = setTimeout(function() {
+                    toastEl.classList.remove("show");
+                }, 2200);
+            }
+
+            function formatGrindClock(ms) {
+                var totalSec = Math.floor(ms / 1000);
+                var h = Math.floor(totalSec / 3600);
+                var m = Math.floor((totalSec % 3600) / 60);
+                var s = totalSec % 60;
+                if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+                return m + ":" + String(s).padStart(2, "0");
+            }
+
+            function flashStatCards() {
+                ["cardThroughput", "cardDifficulty", "cardBest"].forEach(function(id) {
+                    var c = q(id);
+                    if (!c) return;
+                    c.classList.remove("stat-pulse");
+                    void c.offsetWidth;
+                    c.classList.add("stat-pulse");
+                });
+            }
+
+            function getStr(id) {
+                var el = q(id);
+                return el && el.value != null ? String(el.value).trim() : "";
+            }
+
+            function pickInt(id, min, max, fallback) {
+                var el = q(id);
+                var raw = el && el.value != null && el.value !== "" ? String(el.value).trim() : "";
+                var n = parseInt(raw, 10);
+                if (Number.isNaN(n)) n = fallback;
+                if (n < min) n = min;
+                if (typeof max === "number" && n > max) n = max;
+                return n;
+            }
+
+            function fmtMis(first, last, pLen, sLen) {
+                function cell(i) {
+                    if (i == null || i < 0) return "—";
+                    if (i < pLen) return "P" + i;
+                    return "S" + (i - pLen);
+                }
+                return cell(first) + "→" + cell(last);
+            }
+
+            function updateDiff() {
+                if (!difficulty) return;
+                var p = getStr("prefix").length;
+                var s = getStr("suffix").length;
+                var len = p + s;
+                var tries = len === 0 ? 1 : Math.pow(58, len);
+                var kps = streamAvgKps > 0 ? streamAvgKps : streamInstKps;
+                if (kps > 0) {
+                    var etaMin = tries / kps / 60;
+                    difficulty.textContent =
+                        "Pattern len " + len + " · tries ≈ " + tries.toExponential(3) +
+                        " · ETA ≈ " + etaMin.toExponential(2) + " min @ " + Math.round(kps).toLocaleString() + " keys/s (live)";
+                } else {
+                    difficulty.textContent =
+                        "Pattern len " + len + " · tries ≈ " + tries.toExponential(3) + " · start a grind to stream keys/s for ETA";
+                }
+            }
+            ["prefix", "suffix"].forEach(function(id) {
+                var el = q(id);
+                if (el) el.addEventListener("input", updateDiff);
+            });
+            updateDiff();
+
+            function safeJsonParse(s) {
+                try {
+                    return JSON.parse(s);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function applyGrindProgressFromServer(d) {
+                if (!d || d.type !== "progress") return;
+                streamInstKps = typeof d.aggregateKps === "number" ? d.aggregateKps : streamInstKps;
+                streamAvgKps = typeof d.avgKpsWall === "number" ? d.avgKpsWall : streamAvgKps;
+
+                if (throughputLive) {
+                    var instK = (d.aggregateKps || 0) / 1000;
+                    var avgK = (d.avgKpsWall || 0) / 1000;
+                    throughputLive.textContent =
+                        instK.toFixed(2) + "k / " + avgK.toFixed(2) + "k keys/s";
+                }
+                if (throughputSub) {
+                    throughputSub.textContent =
+                        (d.effectiveWorkers ? ? "?") + " workers · " +
+                        (d.totalChecked != null ? d.totalChecked.toLocaleString() + " checked" : "—") +
+                        (d.wallElapsedSec != null ? " · " + d.wallElapsedSec + "s wall" : "");
+                }
+                if (bestScoreLive) {
+                    bestScoreLive.textContent = (d.bestScorePercent ? ? 0) + "% score";
+                }
+                if (accuracy) {
+                    accuracy.textContent =
+                        "Match " + (d.bestMatchedTargetChars ? ? 0) + "/" + (d.bestTargetLen ? ? 0) +
+                        " (" + (d.bestAccuracyPercent ? ? 0) + "%) · avg window " + (d.runningAvgAccuracyPercent ? ? 0) + "%\n" +
+                        "Mis " + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
+                        " · best windows " + (d.bestPrefixWindow || "—") + " / " + (d.bestSuffixWindow || "—");
+                }
+                updateDiff();
+                flashStatCards();
+                if (grindProgressLabel && d.totalChecked) {
+                    grindProgressLabel.textContent = "Searching… " + (d.totalChecked || 0).toLocaleString() + " keys tried";
+                }
+            }
+
+            async function consumeGrindNdjsonStream(reader) {
+                var dec = new TextDecoder();
+                var buf = "";
+                for (;;) {
+                    var result = await reader.read();
+                    if (result.done) break;
+                    buf += dec.decode(result.value, {
+                        stream: true
+                    });
+                    var parts = buf.split("\n");
+                    buf = parts.pop();
+                    for (var i = 0; i < parts.length; i++) {
+                        var line = parts[i].trim();
+                        if (!line) continue;
+                        var d = safeJsonParse(line);
+                        if (!d) continue;
+                        if (d.type === "progress") applyGrindProgressFromServer(d);
+                        else if (d.type === "done") return {
+                            kind: "done",
+                            hits: d.hits || []
+                        };
+                        else if (d.type === "cancelled") return {
+                            kind: "cancelled",
+                            message: d.message || ""
+                        };
+                        else if (d.type === "error") return {
+                            kind: "error",
+                            message: d.message || "error"
+                        };
+                    }
+                }
+                var tail = buf.trim();
+                if (tail) {
+                    var d2 = safeJsonParse(tail);
+                    if (d2) {
+                        if (d2.type === "progress") applyGrindProgressFromServer(d2);
+                        else if (d2.type === "done") return {
+                            kind: "done",
+                            hits: d2.hits || []
+                        };
+                        else if (d2.type === "cancelled") return {
+                            kind: "cancelled",
+                            message: d2.message || ""
+                        };
+                        else if (d2.type === "error") return {
+                            kind: "error",
+                            message: d2.message || "error"
+                        };
+                    }
+                }
+                return {
+                    kind: "error",
+                    message: "Stream ended without a terminal message"
+                };
+            }
+
+            var ALPHA58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+            function base58Decode(str) {
+                var bytes = [];
+                for (var i = 0; i < str.length; i++) {
+                    var value = ALPHA58.indexOf(str[i]);
+                    if (value < 0) throw new Error("invalid base58");
+                    for (var j = 0; j < bytes.length; j++) {
+                        value += bytes[j] * 58;
+                        bytes[j] = value & 0xff;
+                        value >>= 8;
+                    }
+                    while (value > 0) {
+                        bytes.push(value & 0xff);
+                        value >>= 8;
+                    }
+                }
+                for (var k = 0; k < str.length && str[k] === "1"; k++) bytes.push(0);
+                return new Uint8Array(bytes.reverse());
+            }
+
+            function copyText(text) {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    return navigator.clipboard.writeText(text).then(function() {
+                        toast("Copied");
+                    });
+                }
+                var ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                document.body.appendChild(ta);
+                ta.select();
+                try {
+                    document.execCommand("copy");
+                    toast("Copied");
+                } catch (e) {
+                    toast("Copy failed");
+                }
+                document.body.removeChild(ta);
+                return Promise.resolve();
+            }
+
+            function downloadBlob(filename, mime, text) {
+                var a = document.createElement("a");
+                a.href = URL.createObjectURL(new Blob([text], {
+                    type: mime
+                }));
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                toast("Downloaded");
+            }
+
+            function renderHits(hits) {
+                lastHits = Array.isArray(hits) ? hits : [];
+                if (!resultsInner) return;
+                resultsInner.innerHTML = "";
+                if (!lastHits.length) {
+                    resultsInner.textContent = "No keys in this response.";
+                    if (resultsSection) resultsSection.hidden = false;
+                    return;
+                }
+                lastHits.forEach(function(h, idx) {
+                    var wrap = document.createElement("div");
+                    wrap.className = "hit-block";
+                    var title = document.createElement("h4");
+                    title.textContent = "Wallet " + (idx + 1) + (h.encrypted ? " (encrypted)" : "");
+                    wrap.appendChild(title);
+
+                    function row(label, value, copyLabel) {
+                        if (value == null || value === "") return;
+                        var kv = document.createElement("div");
+                        kv.className = "kv";
+                        var k = document.createElement("div");
+                        k.className = "k";
+                        k.textContent = label;
+                        var v = document.createElement("div");
+                        v.className = "v mono";
+                        v.textContent = value;
+                        var b = document.createElement("button");
+                        b.type = "button";
+                        b.className = "btn-sm";
+                        b.textContent = "Copy";
+                        b.addEventListener("click", function() {
+                            copyText(String(value));
+                        });
+                        b.title = "Copy " + copyLabel;
+                        kv.appendChild(k);
+                        kv.appendChild(v);
+                        kv.appendChild(b);
+                        wrap.appendChild(kv);
+                    }
+                    row("Address", h.address, "address");
+                    row("Public key", h.publicKey, "public key");
+                    row("Secret (base58)", h.secretKey, "secret key");
+                    if (h.encrypted && h.decryptKey) row("Decrypt key (save separately)", h.decryptKey, "decrypt key");
+                    resultsInner.appendChild(wrap);
+                });
+                if (resultsSection) resultsSection.hidden = false;
+            }
+
+            function startGrindTimer() {
+                grindStartedAt = Date.now();
+                if (timerId) clearInterval(timerId);
+                timerId = setInterval(function() {
+                    if (grindTimer) grindTimer.textContent = formatGrindClock(Date.now() - grindStartedAt);
+                }, 250);
+            }
+
+            function stopGrindTimer() {
+                if (timerId) {
+                    clearInterval(timerId);
+                    timerId = null;
+                }
+                if (grindTimer) grindTimer.textContent = "0:00";
+            }
+
+            var eventsUrl = apiUrl("/events");
+            var es = new EventSource(eventsUrl);
+            es.onopen = function() {
+                if (serverBar) serverBar.textContent = "Live updates connected · " + eventsUrl;
+            };
+            es.onerror = function() {
+                if (serverBar) serverBar.textContent = "Reconnecting SSE… (" + eventsUrl + ")";
+            };
+            es.addEventListener("progress", function(ev) {
+                applyGrindProgressFromServer(safeJsonParse(ev.data));
+            });
+
+            fetch(apiUrl("/system"), {
+                    cache: "no-store"
+                })
+                .then(function(r) {
+                    return r.text();
+                })
+                .then(function(t) {
+                    var sj = safeJsonParse(t);
+                    if (sj && serverBar) {
+                        serverBar.textContent =
+                            "Server: " + (sj.runtime || "?") + " · " + (sj.cpuCount != null ? sj.cpuCount + " CPUs" : "CPUs n/a") +
+                            " · same origin as this page for /grind";
+                    }
+                })
+                .catch(function() {
+                    if (serverBar) serverBar.textContent = "Could not read /system (offline or blocked).";
+                });
+
+            if (window.location.protocol === "file:") {
+                showError("Open this app from the server URL (e.g. http://localhost:3737/), not as a local file.");
+            }
+
+            function wireDownloads() {
+                var btnCopy = q("btnCopyHits");
+                var btnJ = q("btnDlJson");
+                var btnJl = q("btnDlJsonl");
+                var btnKp = q("btnDlKeypair");
+                if (btnCopy) btnCopy.onclick = function() {
+                    if (!lastHits.length) return toast("Nothing to copy");
+                    copyText(JSON.stringify(lastHits, null, 2));
+                };
+                if (btnJ) btnJ.onclick = function() {
+                    if (!lastHits.length) return;
+                    downloadBlob("vanity-hits-" + Date.now() + ".json", "application/json", JSON.stringify(lastHits, null, 2));
+                };
+                if (btnJl) btnJl.onclick = function() {
+                    if (!lastHits.length) return;
+                    var lines = lastHits.map(function(h) {
+                        return JSON.stringify(h);
+                    }).join("\n") + "\n";
+                    downloadBlob("vanity-hits-" + Date.now() + ".jsonl", "application/x-ndjson", lines);
+                };
+                if (btnKp) btnKp.onclick = function() {
+                    if (!lastHits.length) return toast("No result");
+                    var h = lastHits[0];
+                    if (h.encrypted) return toast("Decrypt first — keypair export needs plaintext secret");
+                    try {
+                        var raw = base58Decode(h.secretKey);
+                        if (raw.length !== 64) return toast("Unexpected secret length");
+                        var arr = Array.from(raw);
+                        downloadBlob("vanity-keypair-" + Date.now() + ".json", "application/json", JSON.stringify(arr));
+                    } catch (e) {
+                        toast("Could not build keypair file");
+                        diagLine("keypair export: " + (e && e.message ? e.message : String(e)));
+                    }
+                };
+            }
+            wireDownloads();
+
+            var grindAbortController = null;
+
+            if (cancelGrindBtn) cancelGrindBtn.onclick = function() {
+                if (grindAbortController) grindAbortController.abort();
+            };
+
+            if (startBtn) startBtn.onclick = async function() {
+                clearError();
+                if (diagLog) diagLog.textContent = "";
+                if (resultsInner) resultsInner.innerHTML = "";
+                if (resultsSection) resultsSection.hidden = true;
+                lastHits = [];
+                streamInstKps = 0;
+                streamAvgKps = 0;
+                if (throughputLive) throughputLive.textContent = "—";
+                if (throughputSub) throughputSub.textContent = "Waiting for server stream…";
+                if (bestScoreLive) bestScoreLive.textContent = "—";
+                if (accuracy) accuracy.textContent = "—";
+                updateDiff();
+
+                var prefix = getStr("prefix");
+                var suffix = getStr("suffix");
+                if (!prefix && !suffix) {
+                    showError("Add a prefix and/or suffix.");
+                    return;
+                }
+
+                grindAbortController = new AbortController();
+                startBtn.disabled = true;
+                if (cancelGrindBtn) cancelGrindBtn.disabled = false;
+                if (grindProgress) grindProgress.hidden = false;
+                if (grindProgressLabel) grindProgressLabel.textContent = "Searching…";
+                startGrindTimer();
+
+                try {
+                    var grindUrl = apiUrl("/grind");
+                    var body = {
+                        prefix: prefix,
+                        suffix: suffix,
+                        count: pickInt("count", 1, 1000000, 1),
+                        threads: pickInt("threads", 1, 512, 16),
+                        threadsMultiplier: 1,
+                        threshold: pickInt("threshold", 0, 100, 90),
+                        progressEvery: pickInt("progressEvery", 64, 10000000, 512),
+                        uiRefreshMs: pickInt("uiRefreshMs", 25, 60000, 500),
+                        maxWorkers: pickInt("maxWorkers", 1, 1024, 256),
+                        caseSensitive: !!(q("caseSensitive") && q("caseSensitive").checked),
+                        encrypt: !!(q("encrypt") && q("encrypt").checked),
+                        useWebgpu: !!(q("useWebgpu") && q("useWebgpu").checked),
+                        decryptKey: ""
+                    };
+
+                    var r = await fetch(grindUrl, {
+                        method: "POST",
+                        headers: {
+                            "content-type": "application/json",
+                            "accept": "application/x-ndjson, application/json",
+                        },
+                        body: JSON.stringify(body),
+                        credentials: "same-origin",
+                        signal: grindAbortController.signal,
+                    });
+                    if (!r.ok) {
+                        var errText = await r.text();
+                        var ej = safeJsonParse(errText);
+                        if (r.status === 499) {
+                            toast("Cancelled");
+                            return;
+                        }
+                        showError("HTTP " + r.status + " — " + (ej && ej.error ? ej.error : errText.slice(0, 400)));
+                        diagLine("grind error body: " + errText.slice(0, 1200));
+                        return;
+                    }
+                    var ct = (r.headers.get("content-type") || "").toLowerCase();
+                    if (ct.indexOf("ndjson") !== -1 && r.body) {
+                        var out = await consumeGrindNdjsonStream(r.body.getReader());
+                        if (out.kind === "done") {
+                            renderHits(out.hits);
+                            toast("Done · " + out.hits.length + " hit(s)");
+                        } else if (out.kind === "cancelled") {
+                            toast("Cancelled");
+                        } else {
+                            showError(out.message || "Grind failed");
+                            diagLine("grind NDJSON: " + (out.message || ""));
+                        }
+                        return;
+                    }
+                    var text = await r.text();
+                    var j = safeJsonParse(text);
+                    if (!Array.isArray(j)) {
+                        showError("Unexpected response (not a JSON array).");
+                        diagLine(text.slice(0, 800));
+                        return;
+                    }
+                    renderHits(j);
+                    toast("Done · " + j.length + " hit(s)");
+                } catch (e) {
+                    if (e && (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"))) {
+                        toast("Cancelled");
+                    } else {
+                        showError((e && e.message ? e.message : String(e)) + " — check network / same-origin / HTTPS mix.");
+                    }
+                } finally {
+                    grindAbortController = null;
+                    stopGrindTimer();
+                    if (grindProgress) grindProgress.hidden = true;
+                    startBtn.disabled = false;
+                    if (cancelGrindBtn) cancelGrindBtn.disabled = true;
+                }
+            };
+        })();
+    </script>
+</body>
+
+</html>

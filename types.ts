@@ -5,14 +5,17 @@ export interface GrindOpts {
   suffix:        string;
   count:         number;
   threads:       number;
-  bunOversubscribe: number; // Bun-only multiplier for effective worker count
+  /** Multiplier applied to `threads` on runtimes that use it for effective worker count. */
+  bunOversubscribe: number;
   progressEvery: number;    // Worker progress emission cadence (iterations)
   uiRefreshMs:   number;    // CLI redraw cadence (ms)
-  maxWorkers:    number;   // Cap effective workers (Bun oversubscribe can explode)
+  maxWorkers:    number;   // Hard cap on effective parallel workers
   caseSensitive: boolean;
   threshold:     number;   // 0–100 – write partial matches ≥ this to file
   encrypt:       boolean;
   decryptKey:    string;   // passphrase or 64-char hex AES key; blank = auto
+  /** Probe WebGPU when set (`--use-webgpu` / `VANITY_USE_WEBGPU`); Ed25519 grind remains CPU workers. */
+  useWebgpu?:    boolean;
 }
 
 export interface GrindResult {
@@ -64,5 +67,9 @@ export type WorkerMsg =
     prefixPatternLen?: number;
     suffixPatternLen?: number;
     runningAvgAccuracyPercent?: number;
+    /** Wall-clock keys/s since this HTTP grind started (server). */
+    avgKpsWall?: number;
+    /** Seconds since grind start for this HTTP request (server). */
+    wallElapsedSec?: number;
   }
   | { type: "error";             message: string };

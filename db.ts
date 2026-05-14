@@ -2,7 +2,8 @@
 // Cross-runtime persistence.
 //   Node ≥ 22   : node:sqlite  (built-in, --experimental-sqlite)
 //   Bun         : bun:sqlite   (built-in, stable)
-//   Deno        : Deno KV      (path: -d vanity.db → vanity.kv beside it)
+//   Deno Deploy : Deno KV (managed openKv)
+//   Deno local  : node:sqlite  (same file as -d vanity.db — fast like Bun; KV fallback if sqlite unavailable)
 
 import { RUNTIME } from "./runtime.ts";
 import type { GrindResult } from "./types.ts";
@@ -166,8 +167,21 @@ export async function initDb(path: string): Promise<DB> {
   try {
     onDeploy = Boolean(DenoApi.env.get("DENO_DEPLOYMENT_ID"));
   } catch { /* ignore */ }
-  const kvPath = denoKvStorePath(path);
-  const kv = onDeploy ? await DenoApi.openKv() : await DenoApi.openKv(kvPath);
-  log.info("db_open", { backend: "deno-kv", path, kvPath: onDeploy ? "(managed)" : kvPath, deploy: onDeploy });
-  return wrapDenoKv(kv);
+
+  if (onDeploy) {
+    const kv = await DenoApi.openKv();
+    log.info("db_open", { backend: "deno-kv", path, kvPath: "(managed)", deploy: true });
+    return wrapDenoKv(kv);
+  }
+
+  try {
+    const { DatabaseSync } = await import("node:sqlite" as string) as any;
+    log.info("db_open", { backend: "deno-sqlite", path });
+    return wrapSqlite(new DatabaseSync(path));
+  } catch (e) {
+    const kvPath = denoKvStorePath(path);
+    const kv = await DenoApi.openKv(kvPath);
+    log.warn("db_open", { backend: "deno-kv-fallback", path, kvPath, err: String(e) });
+    return wrapDenoKv(kv);
+  }
 }
