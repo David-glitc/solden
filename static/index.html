@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0a0a" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <title>Solden · Sol vanity</title>
@@ -22,6 +22,10 @@
             --touch-min: 48px;
             --ok: #0d7a3e;
             --err: #b42318;
+            --accent: #1d4ed8;
+            --accent-muted: rgba(29, 78, 216, 0.14);
+            --ring: 0 0 0 3px rgba(29, 78, 216, 0.35);
+            --server-dot: #9ca3af;
         }
         
         * {
@@ -34,16 +38,34 @@
         
         body {
             margin: 0;
-            font-family: system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, Cantarell, "Noto Sans", Arial, sans-serif;
             font-size: 15px;
-            line-height: 1.5;
+            line-height: 1.55;
             color: var(--ink);
-            background: linear-gradient(160deg, #f0f0f0 0%, #fafafa 40%, #fff 100%);
+            background: linear-gradient(165deg, #eceef2 0%, #f7f8fa 38%, #fff 100%);
             min-height: 100dvh;
             overflow-x: clip;
             -webkit-tap-highlight-color: rgba(10, 10, 10, 0.08);
         }
         
+        .skip-link {
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            z-index: 200;
+            padding: 10px 16px;
+            background: var(--ink);
+            color: var(--paper);
+            font-weight: 600;
+            border-radius: 10px;
+            text-decoration: none;
+        }
+
+        .skip-link:focus {
+            left: max(16px, env(safe-area-inset-left));
+            top: max(12px, env(safe-area-inset-top));
+        }
+
         .shell {
             max-width: 1120px;
             margin: 0 auto;
@@ -133,13 +155,49 @@
         }
         
         .server-bar {
-            font-size: 0.82rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 0.84rem;
             color: var(--muted);
             margin: -8px 0 18px;
-            padding: 8px 12px;
+            padding: 12px 14px;
             background: var(--paper);
             border-radius: var(--radius-md);
             border: 1px solid var(--line);
+            line-height: 1.45;
+        }
+
+        .server-bar::before {
+            content: "";
+            width: 10px;
+            height: 10px;
+            margin-top: 0.32em;
+            flex-shrink: 0;
+            border-radius: 50%;
+            background: var(--server-dot);
+            box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.06);
+        }
+
+        .server-bar[data-state="live"] {
+            --server-dot: #16a34a;
+        }
+
+        .server-bar[data-state="ok"] {
+            --server-dot: #2563eb;
+        }
+
+        .server-bar[data-state="warn"] {
+            --server-dot: #d97706;
+        }
+
+        .server-bar[data-state="err"] {
+            --server-dot: var(--err);
+        }
+
+        .server-bar__text {
+            min-width: 0;
+            flex: 1;
         }
         
         .error-banner {
@@ -150,6 +208,7 @@
             border-radius: var(--radius-md);
             margin-bottom: 16px;
             font-size: 0.92rem;
+            box-shadow: 0 2px 12px rgba(180, 35, 24, 0.08);
         }
         
         .error-banner[hidden] {
@@ -181,6 +240,31 @@
             border-radius: var(--radius-lg);
             padding: 18px 20px;
             box-shadow: var(--shadow);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card--stat {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card--stat::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent), #60a5fa);
+            opacity: 0.85;
+        }
+
+        .grind-card[aria-busy="true"] {
+            opacity: 0.96;
+        }
+
+        .grind-card[aria-busy="true"] .row input:not(:disabled) {
+            opacity: 0.88;
         }
         
         .card h3 {
@@ -221,11 +305,18 @@
             min-height: 44px;
         }
         
-        input:focus,
-        select:focus,
+        input:focus-visible,
+        select:focus-visible,
         button:focus-visible {
-            outline: 2px solid var(--ink);
-            outline-offset: 2px;
+            outline: none;
+            box-shadow: var(--ring);
+            border-color: var(--accent);
+        }
+
+        a:focus-visible {
+            outline: none;
+            box-shadow: var(--ring);
+            border-radius: 4px;
         }
         
         .row {
@@ -304,19 +395,29 @@
         #startBtn {
             max-width: 220px;
             width: 100%;
-            background: var(--ink);
+            background: linear-gradient(165deg, #111 0%, #0a0a0a 100%);
             color: var(--paper);
-            border: none;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             font-weight: 650;
             padding: 14px 20px;
             border-radius: 999px;
             cursor: pointer;
             min-height: var(--touch-min);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
         }
-        
+
+        #startBtn:hover:not(:disabled) {
+            filter: brightness(1.06);
+        }
+
+        #startBtn:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
         #startBtn:disabled {
             opacity: .55;
             cursor: not-allowed;
+            box-shadow: none;
         }
         
         .grind-progress {
@@ -326,6 +427,10 @@
             font-size: 0.95rem;
             font-weight: 600;
             color: var(--ink);
+            padding: 8px 14px;
+            border-radius: 999px;
+            background: var(--accent-muted);
+            border: 1px solid rgba(29, 78, 216, 0.2);
         }
         
         .grind-progress[hidden] {
@@ -413,6 +518,7 @@
             padding: 16px;
             margin-bottom: 14px;
             background: var(--surface);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04);
         }
         
         .hit-block:last-child {
@@ -481,9 +587,11 @@
         
         .toast {
             position: fixed;
-            bottom: 24px;
+            bottom: max(24px, env(safe-area-inset-bottom));
             left: 50%;
             transform: translateX(-50%);
+            max-width: calc(100vw - 32px);
+            text-align: center;
             background: var(--ink);
             color: var(--paper);
             padding: 12px 20px;
@@ -537,18 +645,167 @@
             font-weight: 600;
             color: var(--muted);
             padding: 8px 0;
+            list-style: none;
+        }
+
+        details.diag-card summary::-webkit-details-marker {
+            display: none;
+        }
+
+        details.diag-card summary::before {
+            content: "▸ ";
+            display: inline-block;
+            transition: transform 0.15s ease;
+        }
+
+        details.diag-card[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        .field-group {
+            border: none;
+            margin: 0 0 18px;
+            padding: 0;
+        }
+
+        .field-group .checks {
+            width: 100%;
+        }
+
+        .field-group:last-of-type {
+            margin-bottom: 0;
+        }
+
+        .field-legend {
+            display: block;
+            width: 100%;
+            padding: 0;
+            margin: 0 0 10px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+        }
+
+        .card-heading {
+            margin-bottom: 16px;
+        }
+
+        .card-heading h3 {
+            margin: 0 0 6px;
+        }
+
+        .card-lead {
+            margin: 0;
+            font-size: 0.88rem;
+            color: var(--muted);
+            line-height: 1.45;
+            max-width: 62ch;
+        }
+
+        .results-card h3 {
+            margin-bottom: 14px;
         }
         
         #diagLog {
             margin: 0;
-            max-height: 160px;
+            max-height: 200px;
             overflow: auto;
             font-size: 0.78rem;
             color: var(--muted);
             white-space: pre-wrap;
             word-break: break-word;
+            padding: 12px;
+            background: var(--surface);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--line);
         }
-        
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --ink: #ececf1;
+                --paper: #131318;
+                --muted: #a1a1b0;
+                --line: #2a2a32;
+                --surface: #1c1c24;
+                --shadow: 0 10px 36px rgba(0, 0, 0, 0.5);
+                --accent-muted: rgba(96, 165, 250, 0.16);
+                --ring: 0 0 0 3px rgba(96, 165, 250, 0.38);
+            }
+
+            body {
+                background: linear-gradient(168deg, #0b0b10 0%, #12121a 42%, #16161f 100%);
+                -webkit-tap-highlight-color: rgba(255, 255, 255, 0.06);
+            }
+
+            .brand-mark-inner {
+                background: #1e1e26;
+                border-color: #33333f;
+            }
+
+            header {
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+
+            .error-banner {
+                background: #3b1512;
+                border-color: #6b2a26;
+                color: #fecdd3;
+            }
+
+            #startBtn {
+                background: linear-gradient(165deg, #f4f4f8 0%, #e2e2ea 100%);
+                color: #0a0a0a;
+                border-color: rgba(0, 0, 0, 0.15);
+            }
+
+            .btn-sm:hover,
+            .btn-ghost:hover {
+                background: #252530;
+            }
+
+            .hit-block {
+                background: var(--surface);
+            }
+
+            #cancelGrindBtn {
+                background: var(--paper);
+            }
+        }
+
+        main {
+            display: block;
+        }
+
+        .btn-sm:active {
+            transform: translateY(1px);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .spinner {
+                animation: none;
+                border-top-color: var(--accent);
+                opacity: 0.75;
+            }
+
+            .card.stat-pulse {
+                animation: none;
+            }
+
+            #startBtn:active:not(:disabled) {
+                transform: none;
+            }
+
+            .btn-sm:active {
+                transform: none;
+            }
+
+            details.diag-card summary::before {
+                transition: none;
+            }
+        }
+
         @media (max-width: 640px) {
             body {
                 font-size: 16px;
@@ -591,71 +848,93 @@
 </head>
 
 <body data-api-base="">
-    <div class="shell">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <main class="shell" id="main">
         <header>
             <div class="brand-lockup">
                 <div class="brand-mark">
                     <div class="brand-mark-inner">
-                        <img src="/favicon.svg" width="56" height="56" alt="" decoding="async" />
+                        <img src="/favicon.svg" width="56" height="56" alt="Solden logo" decoding="async" />
                     </div>
                 </div>
                 <div class="brand-copy">
                     <p class="brand-kicker">Solden</p>
                     <h1>Sol vanity</h1>
-                    <p class="brand-desc">Find Solana addresses matching a prefix or suffix. Runs on the server you opened this page from.</p>
+                    <p class="brand-desc">Fast Solana vanity addresses on your own server—no local GPU farm required. Match a prefix, suffix, or both.</p>
                 </div>
-                <span class="header-pill" title="HTML from this server; grind API on same host unless API base is set">Live</span>
+                <span class="header-pill" title="Served from this host; /grind uses the same origin unless API base is set">Live</span>
             </div>
         </header>
 
-        <div id="serverBar" class="server-bar" role="status">Connecting…</div>
-        <div id="errorBanner" class="error-banner" hidden></div>
+        <div id="serverBar" class="server-bar" role="status" data-state="pending">
+            <span id="serverBarText" class="server-bar__text">Connecting…</span>
+        </div>
+        <div id="errorBanner" class="error-banner" role="alert" hidden></div>
 
-        <div class="grid">
-            <div class="card" id="cardThroughput">
+        <div class="grid" id="liveStatsRegion" aria-live="polite" aria-relevant="text">
+            <div class="card card--stat" id="cardThroughput">
                 <h3>Throughput</h3>
                 <div id="throughputLive" class="live-big mono">—</div>
-                <div id="throughputSub" class="stat-sub">Live from server: HTTP NDJSON stream + SSE</div>
+                <div id="throughputSub" class="stat-sub">Instant sum and wall-clock average (NDJSON stream + SSE)</div>
             </div>
-            <div class="card" id="cardDifficulty">
+            <div class="card card--stat" id="cardDifficulty">
                 <h3>Difficulty</h3>
                 <div id="difficulty" class="mono body">—</div>
-                <div class="stat-sub">ETA uses live average keys/s when available</div>
+                <div class="stat-sub">ETA from pattern length and live keys/s</div>
             </div>
-            <div class="card" id="cardBest">
+            <div class="card card--stat" id="cardBest">
                 <h3>Best candidate</h3>
                 <div id="bestScoreLive" class="live-big mono">—</div>
                 <div id="accuracy" class="mono stat-sub">—</div>
             </div>
         </div>
 
-        <div class="card" style="margin-top:18px">
-            <h3>Grind</h3>
-            <div class="row">
-                <div><label title="Base58 characters to match at the start of the address">Prefix</label><input id="prefix" value="meth" autocomplete="off" /></div>
-                <div><label title="Base58 characters to match at the end of the address">Suffix</label><input id="suffix" value="" autocomplete="off" /></div>
-                <div><label title="How many matching addresses to find this run">Count</label><input id="count" type="number" min="1" value="1" /></div>
-                <div><label title="Parallel worker processes on the server">Threads</label><input id="threads" type="number" min="1" value="16" /></div>
-                <div><label title="Emit near-miss events when score ≥ this %">Threshold %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
-                <div><label title="Each worker sends progress every N key tries (lower = more frequent UI updates)">Progress every</label><input id="progressEvery" type="number" min="64" value="512" /></div>
-                <div><label title="Server compatibility field">UI refresh ms</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
-                <div><label title="Maximum parallel workers this run">Max workers</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
-                <div class="checks" style="grid-column: 1 / -1">
+        <div class="card grind-card" id="grindCard" style="margin-top:18px" aria-labelledby="grindHeading">
+            <div class="card-heading">
+                <h3 id="grindHeading">Grind</h3>
+                <p class="card-lead">Work runs on the server. Progress streams on the POST response; logs and extras may use SSE.</p>
+            </div>
+            <fieldset class="field-group">
+                <legend class="field-legend">Pattern</legend>
+                <div class="row">
+                    <div><label for="prefix" title="Base58 characters to match at the start of the address">Prefix</label><input id="prefix" value="meth" autocomplete="off" spellcheck="false" /></div>
+                    <div><label for="suffix" title="Base58 characters to match at the end of the address">Suffix</label><input id="suffix" value="" autocomplete="off" spellcheck="false" /></div>
+                </div>
+            </fieldset>
+            <fieldset class="field-group">
+                <legend class="field-legend">Run</legend>
+                <div class="row">
+                    <div><label for="count" title="How many matching addresses to find this run">Count</label><input id="count" type="number" min="1" value="1" /></div>
+                    <div><label for="threads" title="Parallel worker processes on the server">Threads</label><input id="threads" type="number" min="1" value="16" /></div>
+                    <div><label for="threshold" title="Emit near-miss events when score ≥ this %">Threshold %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
+                </div>
+            </fieldset>
+            <fieldset class="field-group">
+                <legend class="field-legend">Performance</legend>
+                <div class="row">
+                    <div><label for="progressEvery" title="Each worker sends progress every N key tries (lower = snappier UI)">Progress every</label><input id="progressEvery" type="number" min="64" value="512" /></div>
+                    <div><label for="uiRefreshMs" title="Server-side UI refresh hint (CLI)">UI refresh ms</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
+                    <div><label for="maxWorkers" title="Maximum parallel workers this run">Max workers</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
+                </div>
+            </fieldset>
+            <fieldset class="field-group">
+                <legend class="field-legend">Options</legend>
+                <div class="checks">
                     <label title="Match exact character case for prefix/suffix"><input id="caseSensitive" type="checkbox" /> Case-sensitive</label>
                     <label title="Return secret key encrypted; you will need the decrypt key shown in results"><input id="encrypt" type="checkbox" /> Encrypt keys</label>
-                    <label title="Deno local only: ask server to probe WebGPU (keygen stays on CPU)"><input id="useWebgpu" type="checkbox" /> Probe WebGPU</label>
+                    <label title="Deno local: ask server to probe WebGPU (keygen stays on CPU)"><input id="useWebgpu" type="checkbox" /> Probe WebGPU</label>
                 </div>
-            </div>
+            </fieldset>
             <div class="grind-actions">
                 <button type="button" id="startBtn">Start grind</button>
                 <button type="button" id="cancelGrindBtn" disabled>Cancel</button>
-                <div id="grindProgress" class="grind-progress" hidden>
+                <div id="grindProgress" class="grind-progress" hidden aria-live="polite">
                     <span class="spinner" aria-hidden="true"></span>
-                    <span id="grindTimer">0:00</span>
+                    <span id="grindTimer" aria-hidden="true">0:00</span>
                     <span id="grindProgressLabel">Searching…</span>
                 </div>
             </div>
-            <p class="hint-short">Set at least a prefix <em>or</em> suffix. Hover labels for tips.</p>
+            <p class="hint-short">Set at least a <strong>prefix</strong> or <strong>suffix</strong>. Hover labels for tips.</p>
         </div>
 
         <div id="resultsSection" class="card results-card" style="margin-top:18px" hidden>
@@ -680,7 +959,7 @@
             <a href="https://x.com/davidpereishim" target="_blank" rel="noopener noreferrer">X · @davidpereishim</a>
             <a href="https://github.com/David-glitc/solden" target="_blank" rel="noopener noreferrer">Source · solden</a>
         </footer>
-    </div>
+    </main>
     <div id="toast" class="toast" role="status"></div>
 
     <script>
@@ -702,6 +981,8 @@
             const resultsInner = q("resultsInner");
             const errorBanner = q("errorBanner");
             const serverBar = q("serverBar");
+            const serverBarText = q("serverBarText");
+            const grindCard = q("grindCard");
             const diagLog = q("diagLog");
             const toastEl = q("toast");
             let streamInstKps = 0;
@@ -722,10 +1003,21 @@
                 if (!errorBanner) return;
                 errorBanner.textContent = msg;
                 errorBanner.hidden = false;
+                try {
+                    errorBanner.scrollIntoView({
+                        behavior: "smooth",
+                        block: "nearest"
+                    });
+                } catch (e) { /* ignore */ }
             }
 
             function clearError() {
                 if (errorBanner) errorBanner.hidden = true;
+            }
+
+            function setServerState(state, text) {
+                if (serverBar) serverBar.dataset.state = state;
+                if (serverBarText) serverBarText.textContent = text;
             }
 
             function diagLine(msg) {
@@ -831,17 +1123,17 @@
                 }
                 if (throughputSub) {
                     throughputSub.textContent =
-                        (d.effectiveWorkers ? ? "?") + " workers · " +
+                        (d.effectiveWorkers ?? "?") + " workers · " +
                         (d.totalChecked != null ? d.totalChecked.toLocaleString() + " checked" : "—") +
                         (d.wallElapsedSec != null ? " · " + d.wallElapsedSec + "s wall" : "");
                 }
                 if (bestScoreLive) {
-                    bestScoreLive.textContent = (d.bestScorePercent ? ? 0) + "% score";
+                    bestScoreLive.textContent = (d.bestScorePercent ?? 0) + "% score";
                 }
                 if (accuracy) {
                     accuracy.textContent =
-                        "Match " + (d.bestMatchedTargetChars ? ? 0) + "/" + (d.bestTargetLen ? ? 0) +
-                        " (" + (d.bestAccuracyPercent ? ? 0) + "%) · avg window " + (d.runningAvgAccuracyPercent ? ? 0) + "%\n" +
+                        "Match " + (d.bestMatchedTargetChars ?? 0) + "/" + (d.bestTargetLen ?? 0) +
+                        " (" + (d.bestAccuracyPercent ?? 0) + "%) · avg window " + (d.runningAvgAccuracyPercent ?? 0) + "%\n" +
                         "Mis " + fmtMis(d.firstMismatchIndex, d.lastMismatchIndex, getStr("prefix").length, getStr("suffix").length) +
                         " · best windows " + (d.bestPrefixWindow || "—") + " / " + (d.bestSuffixWindow || "—");
                 }
@@ -1007,7 +1299,15 @@
                     if (h.encrypted && h.decryptKey) row("Decrypt key (save separately)", h.decryptKey, "decrypt key");
                     resultsInner.appendChild(wrap);
                 });
-                if (resultsSection) resultsSection.hidden = false;
+                if (resultsSection) {
+                    resultsSection.hidden = false;
+                    try {
+                        resultsSection.scrollIntoView({
+                            behavior: "smooth",
+                            block: "nearest"
+                        });
+                    } catch (e) { /* ignore */ }
+                }
             }
 
             function startGrindTimer() {
@@ -1029,10 +1329,10 @@
             var eventsUrl = apiUrl("/events");
             var es = new EventSource(eventsUrl);
             es.onopen = function() {
-                if (serverBar) serverBar.textContent = "Live updates connected · " + eventsUrl;
+                setServerState("live", "Live updates connected · " + eventsUrl);
             };
             es.onerror = function() {
-                if (serverBar) serverBar.textContent = "Reconnecting SSE… (" + eventsUrl + ")";
+                setServerState("warn", "Reconnecting SSE… (" + eventsUrl + ")");
             };
             es.addEventListener("progress", function(ev) {
                 applyGrindProgressFromServer(safeJsonParse(ev.data));
@@ -1046,14 +1346,16 @@
                 })
                 .then(function(t) {
                     var sj = safeJsonParse(t);
-                    if (sj && serverBar) {
-                        serverBar.textContent =
+                    if (sj) {
+                        setServerState(
+                            "ok",
                             "Server: " + (sj.runtime || "?") + " · " + (sj.cpuCount != null ? sj.cpuCount + " CPUs" : "CPUs n/a") +
-                            " · same origin as this page for /grind";
+                            " · POST /grind same origin as this page",
+                        );
                     }
                 })
                 .catch(function() {
-                    if (serverBar) serverBar.textContent = "Could not read /system (offline or blocked).";
+                    setServerState("err", "Could not read /system (offline or blocked).");
                 });
 
             if (window.location.protocol === "file:") {
@@ -1130,6 +1432,7 @@
                 if (grindProgress) grindProgress.hidden = false;
                 if (grindProgressLabel) grindProgressLabel.textContent = "Searching…";
                 startGrindTimer();
+                if (grindCard) grindCard.setAttribute("aria-busy", "true");
 
                 try {
                     var grindUrl = apiUrl("/grind");
@@ -1203,6 +1506,7 @@
                     grindAbortController = null;
                     stopGrindTimer();
                     if (grindProgress) grindProgress.hidden = true;
+                    if (grindCard) grindCard.removeAttribute("aria-busy");
                     startBtn.disabled = false;
                     if (cancelGrindBtn) cancelGrindBtn.disabled = true;
                 }
