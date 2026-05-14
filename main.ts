@@ -325,20 +325,34 @@ async function runServer() {
         const stream = new TransformStream<Uint8Array, Uint8Array>();
         const writer = stream.writable.getWriter();
         sseClients.add(writer);
+        let closed = false;
+        let pingTimer: ReturnType<typeof setInterval> | undefined;
         const detach = () => {
+          if (closed) return;
+          closed = true;
+          if (pingTimer !== undefined) clearInterval(pingTimer);
+          pingTimer = undefined;
           sseClients.delete(writer);
           writer.close().catch(() => {});
         };
-        req.signal.addEventListener("abort", detach);
-        writer.write(sseEncoder.encode(`event: status\ndata: ${JSON.stringify({ message: "connected" })}\n\n`)).catch(detach);
-        for (const rec of logRing) {
-          await writer.write(sseEncoder.encode(`event: log\ndata: ${JSON.stringify(rec)}\n\n`)).catch(detach);
-        }
+        if (req.signal.aborted) detach();
+        else req.signal.addEventListener("abort", detach, { once: true });
+        void writer.write(sseEncoder.encode(`event: status\ndata: ${JSON.stringify({ message: "connected" })}\n\n`)).catch(detach);
+        void (async () => {
+          for (const rec of logRing) {
+            if (closed) return;
+            await writer.write(sseEncoder.encode(`event: log\ndata: ${JSON.stringify(rec)}\n\n`)).catch(detach);
+          }
+        })();
+        pingTimer = setInterval(() => {
+          if (closed) return;
+          void writer.write(sseEncoder.encode(": ping\n\n")).catch(detach);
+        }, 20_000);
         return done(new Response(stream.readable, {
           headers: {
             "content-type": "text/event-stream; charset=utf-8",
             "cache-control": "no-cache, no-transform",
-            "connection": "keep-alive",
+            "x-accel-buffering": "no",
           },
         }));
       }
@@ -471,6 +485,11 @@ async function runServer() {
         if (wantNdjson) {
           const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
           ndjsonWriter = writable.getWriter();
+          void ndjsonWriter.write(
+            ndjsonEnc.encode(
+              JSON.stringify({ type: "started", t: Date.now(), prefix: go.prefix, suffix: go.suffix }) + "\n",
+            ),
+          ).catch(() => {});
           void (async () => {
             try {
               const results = await runGrindWithHandlers();

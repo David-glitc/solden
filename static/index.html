@@ -1020,6 +1020,28 @@
                 if (serverBarText) serverBarText.textContent = text;
             }
 
+            function fetchWithTimeout(url, opts, ms) {
+                var outer = opts && opts.signal ? opts.signal : null;
+                var ctrl = new AbortController();
+                if (outer) {
+                    if (outer.aborted) ctrl.abort();
+                    else outer.addEventListener("abort", function() {
+                        ctrl.abort();
+                    }, {
+                        once: true
+                    });
+                }
+                var tid = setTimeout(function() {
+                    ctrl.abort();
+                }, ms);
+                var merged = Object.assign({}, opts || {}, {
+                    signal: ctrl.signal
+                });
+                return fetch(url, merged).finally(function() {
+                    clearTimeout(tid);
+                });
+            }
+
             function diagLine(msg) {
                 if (!diagLog) return;
                 diagLog.textContent += new Date().toLocaleTimeString() + " " + msg + "\n";
@@ -1160,6 +1182,7 @@
                         if (!line) continue;
                         var d = safeJsonParse(line);
                         if (!d) continue;
+                        if (d.type === "started") continue;
                         if (d.type === "progress") applyGrindProgressFromServer(d);
                         else if (d.type === "done") return {
                             kind: "done",
@@ -1179,7 +1202,8 @@
                 if (tail) {
                     var d2 = safeJsonParse(tail);
                     if (d2) {
-                        if (d2.type === "progress") applyGrindProgressFromServer(d2);
+                        if (d2.type === "started") {}
+                        else if (d2.type === "progress") applyGrindProgressFromServer(d2);
                         else if (d2.type === "done") return {
                             kind: "done",
                             hits: d2.hits || []
@@ -1329,34 +1353,74 @@
             var eventsUrl = apiUrl("/events");
             var es = new EventSource(eventsUrl);
             es.onopen = function() {
-                setServerState("live", "Live updates connected · " + eventsUrl);
+                if (serverBar && serverBar.dataset.state === "pending") {
+                    setServerState("live", "SSE connected · " + eventsUrl);
+                }
             };
             es.onerror = function() {
-                setServerState("warn", "Reconnecting SSE… (" + eventsUrl + ")");
+                if (serverBar && serverBar.dataset.state !== "ok") {
+                    setServerState("warn", "SSE reconnecting… (" + eventsUrl + ")");
+                }
             };
             es.addEventListener("progress", function(ev) {
                 applyGrindProgressFromServer(safeJsonParse(ev.data));
             });
 
-            fetch(apiUrl("/system"), {
-                    cache: "no-store"
-                })
-                .then(function(r) {
-                    return r.text();
-                })
-                .then(function(t) {
-                    var sj = safeJsonParse(t);
-                    if (sj) {
-                        setServerState(
-                            "ok",
-                            "Server: " + (sj.runtime || "?") + " · " + (sj.cpuCount != null ? sj.cpuCount + " CPUs" : "CPUs n/a") +
-                            " · POST /grind same origin as this page",
-                        );
-                    }
-                })
-                .catch(function() {
-                    setServerState("err", "Could not read /system (offline or blocked).");
+            var bootMs = 10000;
+            fetchWithTimeout(apiUrl("/health"), {
+                cache: "no-store"
+            }, bootMs).then(function(r) {
+                return r.text().then(function(text) {
+                    return {
+                        r: r,
+                        text: text
+                    };
                 });
+            }).then(function(o) {
+                var h = safeJsonParse(o.text);
+                if (o.r.ok && h && h.ok) {
+                    if (serverBar && serverBar.dataset.state === "pending") {
+                        setServerState("ok", "API up (" + (h.runtime || "?") + ") · reading /system…");
+                    }
+                } else if (!o.r.ok && serverBar && serverBar.dataset.state === "pending") {
+                    setServerState("warn", "/health HTTP " + o.r.status);
+                }
+            }).catch(function() {
+                if (serverBar && serverBar.dataset.state === "pending") {
+                    setServerState("warn", "/health timeout or blocked — grind may still work");
+                }
+            });
+
+            fetchWithTimeout(apiUrl("/system"), {
+                cache: "no-store"
+            }, bootMs).then(function(r) {
+                return r.text().then(function(text) {
+                    return {
+                        r: r,
+                        text: text
+                    };
+                });
+            }).then(function(o) {
+                if (!o.r.ok) {
+                    setServerState("err", "/system HTTP " + o.r.status + " · " + o.text.slice(0, 180));
+                    return;
+                }
+                var sj = safeJsonParse(o.text);
+                if (!sj || typeof sj !== "object") {
+                    setServerState("warn", "/system returned non-JSON");
+                    return;
+                }
+                var env = sj.environment === "deno-deploy" ? "Deno Deploy" : String(sj.platform || sj.runtime || "?");
+                var reg = sj.region ? " · " + sj.region : "";
+                setServerState(
+                    "ok",
+                    (sj.runtime || "?") + " · " + (sj.cpuCount != null ? sj.cpuCount + " CPU hint" : "CPUs n/a") +
+                    " · " + env + reg + " · POST /grind on this host"
+                );
+            }).catch(function(err) {
+                var msg = err && err.name === "AbortError" ? "timeout" : "network";
+                setServerState("err", "/system failed (" + msg + ") — check Deploy logs / CORS");
+            });
 
             if (window.location.protocol === "file:") {
                 showError("Open this app from the server URL (e.g. http://localhost:3737/), not as a local file.");

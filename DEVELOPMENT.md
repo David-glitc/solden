@@ -84,6 +84,11 @@
 - **`static/index.html`:** no manual avg keys/s input; throughput / difficulty ETA / best score / accuracy update from SSE **`progress`**; **Cancel** uses `AbortController` + `fetch(..., signal)`; POST sends **`threadsMultiplier: 1`** (server still accepts legacy **`bunOversubscribe`**).
 - **`log.ts`:** one-line pulse formatter shows optional accuracy + mismatch tail when those fields are present.
 
+## 2026-05-14 — Deploy: SSE connect + client bootstrap
+- **`main.ts` `/events`:** return the **`Response` immediately**; replay **`logRing`** in a **background** async loop so the browser leaves the EventSource **“connecting”** state without waiting for up to 200 writes. Removed hop-by-hop **`Connection: keep-alive`** (problematic on HTTP/2). Added **`x-accel-buffering: no`** and periodic **`: ping`** frames; **idempotent detach** and **abort-if-already-aborted** on `req.signal`.
+- **`main.ts` `/grind` (NDJSON):** emit an immediate **`{ type: "started", … }`** line so the POST body starts streaming before the first worker progress tick.
+- **`static/index.html`:** **`fetchWithTimeout`** for **`/health`** and **`/system`** (10s); always surface **`/system`** HTTP errors and non-JSON; **EventSource** `onopen` only upgrades the bar from **`pending`**; **`onerror`** does not clobber **`ok`**. NDJSON consumer ignores **`started`**.
+
 ## 2026-05-14 — POST /grind NDJSON body stream
 - **`main.ts`:** when `Accept` includes **`application/x-ndjson`**, **`POST /grind`** returns **200** immediately with a **`ReadableStream`** body: one JSON object per line — repeated **`type: "progress"`** lines (same fields as SSE progress), then a terminal **`type: "done"`** (with `hits`), **`type: "cancelled"`**, or **`type: "error"`**. Headers include **`x-accel-buffering: no`** for reverse proxies. Without that Accept value, the handler still returns a single JSON array after the grind (legacy `curl` / scripts).
 - **`static/index.html`:** grind **`fetch`** sends **`Accept: application/x-ndjson, application/json`** and **`consumeGrindNdjsonStream`** updates the stat cards from each progress line; **`applyGrindProgressFromServer`** is shared with the SSE `progress` listener.
