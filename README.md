@@ -4,33 +4,6 @@ Fast **Solana vanity** (Ed25519) grinding with a **web control panel**, **NDJSON
 
 ---
 
-## Solden mark (SVG)
-
-Use this mark in your own apps, README badges, or print collateral. **Canonical file in the repo:** [`static/solden-mark.svg`](static/solden-mark.svg).
-
-When the HTTP server is running, the same bytes are served at:
-
-- **`/solden-mark.svg`** (explicit path for docs or hotlinking)
-- **`/favicon.svg`** and **`/favicon.ico`** (browser favicon; body is still SVG)
-
-Copy-paste markup (tweak `width` / `height` / `fill` as needed):
-
-```svg
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" class="solden-mark" width="72" height="72" aria-hidden="true">
-  <rect width="100%" height="100%" fill="none"/>
-  <g fill="#111111">
-    <path d="M 250,50 A 200,200 0 0,1 450,250 L 370,250 A 120,120 0 0,0 250,130 Z" />
-    <path d="M 250,450 A 200,200 0 0,1 50,250 L 130,250 A 120,120 0 0,0 250,370 Z" />
-    <circle cx="250" cy="250" r="40" />
-  </g>
-  <text x="250" y="490" font-family="system-ui, -apple-system, Segoe UI, sans-serif" font-size="32" font-weight="bold" letter-spacing="6" fill="#111111" text-anchor="middle">SOLDEN</text>
-</svg>
-```
-
-**Dark UI tip:** set `fill` on the `<g>` and `<text>` to `#e2e8f0` (or your token) for light-on-dark themes.
-
----
-
 ## Repository layout
 
 | Path | Role |
@@ -190,9 +163,3 @@ deno task bench
 ## Development log
 
 Incremental notes live in [`DEVELOPMENT.md`](DEVELOPMENT.md) (dated entries).
-
----
-
-## License
-
-No `LICENSE` file is committed in this tree; refer to the **solden** GitHub project linked in the web panel footer for upstream terms.
