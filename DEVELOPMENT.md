@@ -124,6 +124,10 @@
 ## 2026-05-15 — Index-scoped address eval (prefix/suffix chunks only)
 - **`src/worker.ts`:** `evalAddr` / `matchStats` compare only `addr[0..pfxLen)` and `addr[len-sfxLen..len)` via `addrCharEq`; no full-address `toLowerCase()` on the hot path.
 
+## 2026-05-15 — Admin UI layout, extreme perf mode, full job params
+- **`static/admin.html`:** Grid layout, RAM hero + bar, CPU stats, performance mode (standard / unthrottled / extreme = all cores), full job form (keygen, batch, threads, caps, encrypt…).
+- **`src/admin.ts`:** `perfMode` extreme uses `threads = maxWorkers = cpuCount`; monitor adds `memoryFreePercent`, `adminExtremeThreads`.
+
 ## 2026-05-15 — README overhaul + UI Advanced mode (all GrindOpts)
 - **`README.md`:** Full CLI/API/env tables, architecture diagram, performance notes, Advanced mode docs.
 - **`static/index.html`:** Advanced mode toggle + panel (`keygen`, `keygenBatch`, `bunOversubscribe`, `progressEvery`, `uiRefreshMs`, `maxWorkers`, `useWebgpu`, `decryptKey`); `buildGrindBody()`; live `keygenBackend` in throughput card.

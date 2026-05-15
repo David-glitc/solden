@@ -6,84 +6,373 @@
     <link rel="icon" href="/solden-mark.svg" type="image/svg+xml" />
     <title>Solden · Admin</title>
     <style>
-        :root { --ink:#0a0a0a; --paper:#fff; --muted:#64748b; --line:#e2e8f0; --accent:#2563eb; --err:#b42318; --ok:#0d7a3e; }
+        :root {
+            --bg: #0b1220;
+            --card: #1e293b;
+            --card2: #0f172a;
+            --line: #334155;
+            --text: #e2e8f0;
+            --muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-dim: #1d4ed8;
+            --ok: #22c55e;
+            --warn: #f59e0b;
+            --err: #ef4444;
+            --radius: 12px;
+        }
         * { box-sizing: border-box; }
-        body { margin:0; font-family:system-ui,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; }
-        .wrap { max-width:1100px; margin:0 auto; padding:20px; }
-        header { display:flex; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
-        header h1 { margin:0; font-size:1.35rem; color:#f8fafc; }
-        header a { color:#93c5fd; text-decoration:none; font-size:0.9rem; }
-        .card { background:#1e293b; border:1px solid #334155; border-radius:14px; padding:18px; margin-bottom:18px; }
-        .card h2 { margin:0 0 12px; font-size:1rem; color:#f1f5f9; }
-        label { display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:4px; }
-        input, select { width:100%; padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#f8fafc; margin-bottom:10px; }
-        .row { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; }
-        button { padding:10px 16px; border-radius:8px; border:none; font-weight:600; cursor:pointer; background:#2563eb; color:#fff; }
-        button.secondary { background:#334155; }
-        button.danger { background:#b42318; }
-        button:disabled { opacity:0.5; cursor:not-allowed; }
-        .mono { font-family:ui-monospace,Consolas,monospace; font-size:0.82rem; }
-        .monitor-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
-        .stat { background:#0f172a; padding:12px; border-radius:8px; border:1px solid #334155; }
-        .stat .k { font-size:0.72rem; color:#94a3b8; text-transform:uppercase; }
-        .stat .v { font-size:1.1rem; font-weight:700; color:#f8fafc; margin-top:4px; }
-        .job { border:1px solid #334155; border-radius:10px; padding:12px; margin-bottom:10px; background:#0f172a; }
-        .job h3 { margin:0 0 6px; font-size:0.95rem; color:#f8fafc; }
-        .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.7rem; font-weight:700; text-transform:uppercase; }
-        .badge.running { background:#1e3a5f; color:#93c5fd; }
-        .badge.done { background:#14532d; color:#86efac; }
-        .badge.failed, .badge.cancelled { background:#450a0a; color:#fca5a5; }
-        .hit-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 0; border-top:1px solid #334155; font-size:0.82rem; }
-        #loginCard { max-width:360px; }
-        .hidden { display:none !important; }
-        .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+        }
+        .wrap { max-width: 1120px; margin: 0 auto; padding: 20px 16px 40px; }
+        .topbar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--line);
+        }
+        .topbar h1 { margin: 0; font-size: 1.25rem; color: #f8fafc; }
+        .topbar a { color: #93c5fd; text-decoration: none; font-size: 0.88rem; }
+        .topbar a:hover { text-decoration: underline; }
+        .topbar .spacer { flex: 1; min-width: 8px; }
+        .card {
+            background: var(--card);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            padding: 18px 20px;
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            margin: 0 0 4px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #f1f5f9;
+        }
+        .card .lead {
+            margin: 0 0 16px;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px 14px;
+        }
+        @media (max-width: 720px) { .form-grid { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 480px) { .form-grid { grid-template-columns: 1fr; } }
+        .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+        .field.span-2 { grid-column: span 2; }
+        .field.span-3 { grid-column: 1 / -1; }
+        @media (max-width: 720px) {
+            .field.span-2, .field.span-3 { grid-column: 1 / -1; }
+        }
+        label.field-label {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--muted);
+        }
+        input, select {
+            width: 100%;
+            padding: 9px 11px;
+            border-radius: 8px;
+            border: 1px solid #475569;
+            background: var(--card2);
+            color: #f8fafc;
+            font: inherit;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35);
+        }
+        .check-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px 20px;
+            align-items: center;
+            margin-top: 4px;
+        }
+        .check-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.88rem;
+            color: var(--text);
+            cursor: pointer;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+        }
+        .perf-modes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 12px 0 16px;
+            padding: 12px;
+            background: var(--card2);
+            border-radius: 8px;
+            border: 1px solid var(--line);
+        }
+        .perf-modes label {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            cursor: pointer;
+            font-size: 0.88rem;
+            text-transform: none;
+            letter-spacing: 0;
+            font-weight: 400;
+        }
+        .perf-modes input { width: auto; margin-top: 3px; flex-shrink: 0; }
+        .perf-modes .hint { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+        button {
+            padding: 10px 16px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            font-size: 0.88rem;
+            cursor: pointer;
+            background: var(--accent);
+            color: #fff;
+        }
+        button:hover { background: var(--accent-dim); }
+        button.secondary { background: #475569; }
+        button.danger { background: var(--err); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+        .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; word-break: break-all; }
+        .hidden { display: none !important; }
+        #loginCard { max-width: 400px; }
+
+        /* Monitor */
+        .ram-hero {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 12px 20px;
+            align-items: end;
+            margin-bottom: 16px;
+            padding: 14px 16px;
+            background: var(--card2);
+            border-radius: 10px;
+            border: 1px solid var(--line);
+        }
+        .ram-hero .big {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #f8fafc;
+            line-height: 1.1;
+        }
+        .ram-hero .sub { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+        .ram-bar {
+            grid-column: 1 / -1;
+            height: 10px;
+            background: #334155;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+        .ram-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--ok), #4ade80);
+            border-radius: 999px;
+            transition: width 0.3s ease;
+        }
+        .ram-bar-fill.low { background: linear-gradient(90deg, var(--warn), #fbbf24); }
+        .ram-bar-fill.critical { background: linear-gradient(90deg, var(--err), #f87171); }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+        }
+        .stat {
+            background: var(--card2);
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+        }
+        .stat .k {
+            font-size: 0.68rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .stat .v {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #f8fafc;
+            margin-top: 4px;
+        }
+
+        /* Jobs */
+        .job {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            background: var(--card2);
+        }
+        .job-head {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px 12px;
+            margin-bottom: 8px;
+        }
+        .job-head h3 { margin: 0; font-size: 0.92rem; flex: 1; min-width: 120px; }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge.running { background: #1e3a5f; color: #93c5fd; }
+        .badge.done { background: #14532d; color: #86efac; }
+        .badge.failed, .badge.cancelled, .badge.queued { background: #450a0a; color: #fca5a5; }
+        .badge.queued { background: #422006; color: #fcd34d; }
+        .job-meta { font-size: 0.8rem; color: var(--muted); margin: 0 0 8px; }
+        .hit-row {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 8px 12px;
+            align-items: center;
+            padding: 8px 0;
+            border-top: 1px solid var(--line);
+            font-size: 0.82rem;
+        }
+        .hit-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .hit-actions button { padding: 6px 10px; font-size: 0.75rem; }
+        details.advanced-fields summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #93c5fd;
+            margin-bottom: 10px;
+        }
+        code { font-size: 0.8em; background: #0f172a; padding: 2px 6px; border-radius: 4px; }
     </style>
 </head>
 <body>
     <div class="wrap">
-        <header>
-            <img src="/solden-mark.svg" width="48" height="48" alt="" />
+        <header class="topbar">
+            <img src="/solden-mark.svg" width="44" height="44" alt="" />
             <div>
                 <h1>Admin</h1>
                 <a href="/">← Back to search</a>
             </div>
-            <button type="button" class="secondary hidden" id="logoutBtn" style="margin-left:auto">Sign out</button>
+            <span class="spacer"></span>
+            <button type="button" class="secondary hidden" id="logoutBtn">Sign out</button>
         </header>
 
         <div class="card" id="loginCard">
             <h2>Sign in</h2>
-            <p style="color:#94a3b8;font-size:0.88rem;margin:0 0 12px">Password is set on the server (<code class="mono">VANITY_ADMIN_PASSWORD</code>).</p>
-            <label for="adminPw">Password</label>
-            <input id="adminPw" type="password" autocomplete="current-password" />
-            <button type="button" id="loginBtn">Sign in</button>
-            <p id="loginErr" class="hidden" style="color:#fca5a5;margin-top:10px"></p>
+            <p class="lead">Server env <code>VANITY_ADMIN_PASSWORD</code></p>
+            <div class="field">
+                <label class="field-label" for="adminPw">Password</label>
+                <input id="adminPw" type="password" autocomplete="current-password" />
+            </div>
+            <div class="btn-row">
+                <button type="button" id="loginBtn">Sign in</button>
+            </div>
+            <p id="loginErr" class="hidden" style="color:#fca5a5;margin-top:12px"></p>
         </div>
 
         <div id="appPanel" class="hidden">
-            <div class="card">
-                <h2>Server resources</h2>
-                <div id="monitorGrid" class="monitor-grid">Loading…</div>
-                <p style="font-size:0.8rem;color:#64748b;margin:12px 0 0">Admin unthrottled mode targets ~90% of CPU threads and raises worker caps.</p>
+            <div class="grid-2">
+                <div class="card">
+                    <h2>Memory</h2>
+                    <p class="lead">System RAM available for long grinds</p>
+                    <div class="ram-hero" id="ramHero">
+                        <div>
+                            <div class="big" id="ramFreeBig">—</div>
+                            <div class="sub" id="ramFreeSub">Free RAM</div>
+                        </div>
+                        <div style="text-align:right">
+                            <div class="big" style="font-size:1.25rem" id="ramPctBig">—</div>
+                            <div class="sub">free</div>
+                        </div>
+                        <div class="ram-bar"><div class="ram-bar-fill" id="ramBarFill" style="width:0%"></div></div>
+                    </div>
+                    <div class="stat-grid" id="monitorGrid"></div>
+                </div>
+
+                <div class="card">
+                    <h2>CPU & jobs</h2>
+                    <p class="lead">Worker caps by performance mode</p>
+                    <div class="stat-grid" id="cpuGrid"></div>
+                </div>
             </div>
 
             <div class="card">
-                <h2>Background job</h2>
-                <p style="color:#94a3b8;font-size:0.88rem;margin:0 0 12px">Runs on the server after you leave this page.</p>
-                <div class="row">
-                    <div><label>Prefix</label><input id="jPrefix" value="meth" /></div>
-                    <div><label>Suffix</label><input id="jSuffix" value="" /></div>
-                    <div><label>Count</label><input id="jCount" type="number" min="1" value="1" /></div>
-                    <div><label>Threshold %</label><input id="jThreshold" type="number" min="0" max="100" value="90" /></div>
+                <h2>New background job</h2>
+                <p class="lead">Keeps running if you close this tab. Uses same options as <code>POST /grind</code>.</p>
+
+                <div class="form-grid">
+                    <div class="field"><label class="field-label" for="jPrefix">Prefix</label><input id="jPrefix" value="meth" spellcheck="false" /></div>
+                    <div class="field"><label class="field-label" for="jSuffix">Suffix</label><input id="jSuffix" value="" spellcheck="false" /></div>
+                    <div class="field"><label class="field-label" for="jCount">Count</label><input id="jCount" type="number" min="1" value="1" /></div>
+                    <div class="field"><label class="field-label" for="jThreshold">Threshold %</label><input id="jThreshold" type="number" min="0" max="100" value="90" /></div>
+                    <div class="field"><label class="field-label" for="jThreads">Threads</label><input id="jThreads" type="number" min="1" max="512" value="4" title="Applied in Standard mode; overridden in turbo modes" /></div>
+                    <div class="field"><label class="field-label" for="jMaxWorkers">Max workers</label><input id="jMaxWorkers" type="number" min="1" max="1024" value="64" /></div>
                 </div>
-                <label><input id="jUnthrottled" type="checkbox" checked /> Unthrottled (~90% CPU / max workers)</label>
-                <div class="actions">
-                    <button type="button" id="spawnJobBtn">Start background job</button>
-                    <button type="button" class="secondary" id="refreshJobsBtn">Refresh jobs</button>
+
+                <p class="field-label" style="margin:16px 0 0">Performance mode</p>
+                <div class="perf-modes" role="radiogroup" aria-label="Performance mode">
+                    <label><input type="radio" name="perfMode" value="standard" /> <span><strong>Standard</strong><span class="hint">Uses thread fields above, capped to CPU count</span></span></label>
+                    <label><input type="radio" name="perfMode" value="unthrottled" /> <span><strong>Unthrottled</strong><span class="hint" id="hintUnthrottled">~90% CPU, higher worker cap</span></span></label>
+                    <label><input type="radio" name="perfMode" value="extreme" checked /> <span><strong>Extreme</strong><span class="hint" id="hintExtreme">All CPU cores — e.g. 4/4 on a quad-core</span></span></label>
+                </div>
+
+                <details class="advanced-fields">
+                    <summary>More parameters (keygen, batch, timing…)</summary>
+                    <div class="form-grid" style="margin-top:12px">
+                        <div class="field">
+                            <label class="field-label" for="jKeygen">Keygen</label>
+                            <select id="jKeygen">
+                                <option value="auto" selected>auto</option>
+                                <option value="sodium">sodium</option>
+                                <option value="node">node</option>
+                                <option value="noble">noble</option>
+                                <option value="subtle">subtle</option>
+                            </select>
+                        </div>
+                        <div class="field"><label class="field-label" for="jKeygenBatch">Keygen batch</label><input id="jKeygenBatch" type="number" min="8" max="256" value="64" /></div>
+                        <div class="field"><label class="field-label" for="jBunOver">Worker multiplier</label><input id="jBunOver" type="number" min="0.1" max="4" step="0.05" value="1" /></div>
+                        <div class="field"><label class="field-label" for="jProgressEvery">Progress step</label><input id="jProgressEvery" type="number" min="64" max="10000000" value="2048" /></div>
+                        <div class="field"><label class="field-label" for="jUiRefresh">UI refresh ms</label><input id="jUiRefresh" type="number" min="25" max="60000" value="120" /></div>
+                        <div class="field span-3">
+                            <label class="field-label" for="jDecryptKey">Decrypt key (if encrypt on)</label>
+                            <input id="jDecryptKey" type="password" autocomplete="off" placeholder="Blank = auto" />
+                        </div>
+                    </div>
+                    <div class="check-row">
+                        <label><input id="jCaseSensitive" type="checkbox" /> Case sensitive</label>
+                        <label><input id="jEncrypt" type="checkbox" /> Encrypt secret</label>
+                        <label><input id="jWebgpu" type="checkbox" /> WebGPU probe</label>
+                    </div>
+                </details>
+
+                <div class="btn-row">
+                    <button type="button" id="spawnJobBtn">Start job</button>
+                    <button type="button" class="secondary" id="refreshJobsBtn">Refresh</button>
                 </div>
             </div>
 
             <div class="card">
                 <h2>Jobs</h2>
+                <p class="lead">Auto-refreshes every 5s</p>
                 <div id="jobsList"></div>
             </div>
         </div>
@@ -120,43 +409,129 @@
             q("appPanel").classList.remove("hidden");
             q("logoutBtn").classList.remove("hidden");
         }
+        function pickInt(id, min, max, fallback) {
+            const el = q(id);
+            let n = parseInt(el && el.value !== "" ? el.value : String(fallback), 10);
+            if (Number.isNaN(n)) n = fallback;
+            if (n < min) n = min;
+            if (n > max) n = max;
+            return n;
+        }
+        function pickFloat(id, min, max, fallback) {
+            const el = q(id);
+            let n = parseFloat(el && el.value !== "" ? el.value : String(fallback));
+            if (Number.isNaN(n)) n = fallback;
+            if (n < min) n = min;
+            if (n > max) n = max;
+            return n;
+        }
+        function getPerfMode() {
+            const r = document.querySelector('input[name="perfMode"]:checked');
+            return r ? r.value : "extreme";
+        }
+        function statCell(k, v) {
+            return '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></stat>';
+        }
+        function updateRamHero(m) {
+            const free = m.memoryFreeMB;
+            const total = m.memoryTotalMB;
+            const pct = m.memoryFreePercent;
+            q("ramFreeBig").textContent = free != null ? free.toLocaleString() + " MB" : "—";
+            q("ramFreeSub").textContent = total != null ? "free of " + total.toLocaleString() + " MB total" : "Free RAM";
+            q("ramPctBig").textContent = pct != null ? pct + "%" : "—";
+            const bar = q("ramBarFill");
+            if (bar && pct != null) {
+                bar.style.width = Math.max(0, Math.min(100, pct)) + "%";
+                bar.classList.remove("low", "critical");
+                if (pct < 15) bar.classList.add("critical");
+                else if (pct < 30) bar.classList.add("low");
+            }
+        }
         async function loadMonitor() {
             const m = await api("/admin/api/monitor");
-            const el = q("monitorGrid");
-            const rows = [
-                ["Runtime", m.runtime],
-                ["CPUs", m.cpuCount],
-                ["Admin thread cap", m.adminThreadsCap],
-                ["RAM total", m.memoryTotalMB != null ? m.memoryTotalMB + " MB" : "—"],
-                ["RAM free", m.memoryFreeMB != null ? m.memoryFreeMB + " MB" : "—"],
-                ["RAM used", m.memoryUsedMB != null ? m.memoryUsedMB + " MB" : "—"],
+            updateRamHero(m);
+            const memStats = [
+                ["Used RAM", m.memoryUsedMB != null ? m.memoryUsedMB + " MB" : "—"],
                 ["Process RSS", m.rssMB != null ? m.rssMB + " MB" : "—"],
                 ["Heap used", m.heapUsedMB != null ? m.heapUsedMB + " MB" : "—"],
-                ["Running jobs", m.runningJobs],
-                ["Threshold keys stored", m.thresholdHitsStored],
+                ["Runtime", m.runtime],
             ];
-            el.innerHTML = rows.map(function(r) {
-                return '<div class="stat"><div class="k">' + r[0] + '</div><div class="v">' + r[1] + '</div></stat>';
-            }).join("");
+            q("monitorGrid").innerHTML = memStats.map(function(r) { return statCell(r[0], r[1]); }).join("");
+            const labels = m.adminPerfLabels || {};
+            const cpuStats = [
+                ["CPU cores", m.cpuCount],
+                ["Extreme cap", (m.adminExtremeThreads ?? m.cpuCount) + " threads"],
+                ["Unthrottled", labels.unthrottled || "—"],
+                ["Standard", labels.standard || "—"],
+                ["Running jobs", m.runningJobs],
+                ["Threshold keys", m.thresholdHitsStored],
+            ];
+            q("cpuGrid").innerHTML = cpuStats.map(function(r) { return statCell(r[0], r[1]); }).join("");
+            if (m.cpuCount) {
+                q("hintExtreme").textContent = "All " + m.cpuCount + " cores (" + m.cpuCount + " workers, no oversubscribe)";
+                q("hintUnthrottled").textContent = "~90% CPU (" + (m.adminUnthrottledThreads || "?") + " threads), raised max workers";
+                const threadsEl = q("jThreads");
+                if (threadsEl && !threadsEl.dataset.touched) threadsEl.value = String(m.cpuCount);
+            }
         }
-        function hitActions(h, idx) {
-            return '<button type="button" class="secondary" data-copy="' + idx + '">Copy</button>' +
-                '<button type="button" class="secondary" data-kp="' + idx + '">Keypair</button>';
+        function buildJobBody() {
+            return {
+                prefix: q("jPrefix").value.trim(),
+                suffix: q("jSuffix").value.trim(),
+                count: pickInt("jCount", 1, 1000000, 1),
+                threshold: pickInt("jThreshold", 0, 100, 90),
+                threads: pickInt("jThreads", 1, 512, 4),
+                maxWorkers: pickInt("jMaxWorkers", 1, 1024, 64),
+                progressEvery: pickInt("jProgressEvery", 64, 10000000, 2048),
+                uiRefreshMs: pickInt("jUiRefresh", 25, 60000, 120),
+                bunOversubscribe: pickFloat("jBunOver", 0.1, 4, 1),
+                threadsMultiplier: pickFloat("jBunOver", 0.1, 4, 1),
+                caseSensitive: q("jCaseSensitive").checked,
+                encrypt: q("jEncrypt").checked,
+                useWebgpu: q("jWebgpu").checked,
+                decryptKey: q("jDecryptKey").value.trim(),
+                keygen: q("jKeygen").value,
+                keygenBatch: pickInt("jKeygenBatch", 8, 256, 64),
+                perfMode: getPerfMode(),
+                extreme: getPerfMode() === "extreme",
+                unthrottled: getPerfMode() === "unthrottled",
+            };
+        }
+        function hitActions(jobId, i) {
+            return '<div class="hit-actions">' +
+                '<button type="button" class="secondary" data-copy="' + jobId + "-" + i + '">Copy</button>' +
+                '<button type="button" class="secondary" data-kp="' + jobId + "-" + i + '">Keypair</button></div>';
         }
         function renderJob(job) {
             const all = job.hits.concat(job.thresholdHits || []);
-            const hitsHtml = all.length ? all.map(function(h, i) {
-                return '<div class="hit-row"><span class="badge">' + h.score + '%</span> ' +
-                    '<span class="mono">' + h.address + '</span> ' + hitActions(h, job.id + "-" + i) + '</div>';
-            }).join("") : '<p style="color:#64748b">No keys yet.</p>';
             const prog = job.progress || {};
+            const mode = job.perfMode || (job.unthrottled ? "unthrottled" : "standard");
+            const hitsHtml = all.length ? all.map(function(h, i) {
+                return '<div class="hit-row">' +
+                    '<span class="badge">' + h.score + '%</span>' +
+                    '<span class="mono">' + h.address + '</span>' +
+                    hitActions(job.id, i) + '</div>';
+            }).join("") : '<p style="color:#64748b;margin:8px 0 0">No keys yet.</p>';
             return '<div class="job" data-job="' + job.id + '">' +
+                '<div class="job-head">' +
                 '<h3><span class="badge ' + job.status + '">' + job.status + '</span> ' + job.id + '</h3>' +
-                '<p class="mono" style="margin:0;color:#94a3b8">' + job.opts.prefix + ' / ' + (job.opts.suffix || "—") +
-                ' · ' + (prog.totalChecked || 0).toLocaleString() + ' keys · ' + (prog.aggregateKps || 0).toLocaleString() + ' k/s</p>' +
+                '</div>' +
+                '<p class="job-meta">' +
+                escapeHtml(job.opts.prefix) + ' / ' + escapeHtml(job.opts.suffix || "—") +
+                ' · mode <strong>' + mode + '</strong>' +
+                ' · ' + job.opts.threads + 't / ' + job.opts.maxWorkers + ' cap' +
+                ' · keygen ' + (job.opts.keygen || "auto") +
+                '</p>' +
+                '<p class="job-meta mono">' +
+                (prog.totalChecked || 0).toLocaleString() + ' keys · ' +
+                (prog.aggregateKps || 0).toLocaleString() + ' keys/s · best ' + (prog.bestScorePercent || 0) + '%' +
+                '</p>' +
                 hitsHtml +
-                (job.status === "running" ? '<div class="actions"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel</button></div>' : "") +
+                (job.status === "running" ? '<div class="btn-row"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel</button></div>' : "") +
                 '</div>';
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
         async function loadJobs() {
             const jobs = await api("/admin/api/jobs");
@@ -165,9 +540,10 @@
             el.innerHTML = jobs.map(renderJob).join("");
             el.querySelectorAll("[data-copy]").forEach(function(btn) {
                 btn.onclick = function() {
-                    const id = btn.closest(".job").dataset.job;
-                    api("/admin/api/jobs/" + id).then(function(job) {
-                        const i = parseInt(btn.dataset.copy.split("-").pop(), 10);
+                    const parts = btn.dataset.copy.split("-");
+                    const jobId = parts.slice(0, -1).join("-");
+                    const i = parseInt(parts[parts.length - 1], 10);
+                    api("/admin/api/jobs/" + jobId).then(function(job) {
                         const all = job.hits.concat(job.thresholdHits || []);
                         const h = all[i];
                         if (h) navigator.clipboard.writeText(h.secretKey);
@@ -203,21 +579,17 @@
             showLogin();
         };
         q("spawnJobBtn").onclick = async function() {
-            await api("/admin/api/jobs", {
-                method: "POST",
-                body: JSON.stringify({
-                    prefix: q("jPrefix").value.trim(),
-                    suffix: q("jSuffix").value.trim(),
-                    count: parseInt(q("jCount").value, 10) || 1,
-                    threshold: parseInt(q("jThreshold").value, 10) || 90,
-                    unthrottled: q("jUnthrottled").checked,
-                    threads: 64,
-                    maxWorkers: 512,
-                }),
-            });
+            const body = buildJobBody();
+            if (!body.prefix && !body.suffix) {
+                alert("Prefix or suffix required");
+                return;
+            }
+            await api("/admin/api/jobs", { method: "POST", body: JSON.stringify(body) });
             await loadJobs();
+            await loadMonitor();
         };
         q("refreshJobsBtn").onclick = function() { loadJobs(); loadMonitor(); };
+        q("jThreads").addEventListener("input", function() { q("jThreads").dataset.touched = "1"; });
         setInterval(function() {
             if (token()) { loadJobs().catch(function() {}); loadMonitor().catch(function() {}); }
         }, 5000);

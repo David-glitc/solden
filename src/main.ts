@@ -14,6 +14,7 @@ import type { GrindOpts, GrindResult, WorkerMsg } from "./types.ts";
 import {
   adminPasswordConfigured,
   applyAdminOpts,
+  resolveAdminPerfMode,
   cancelJob,
   createAdminSession,
   extractAdminToken,
@@ -566,7 +567,9 @@ async function runServer() {
 
         const go = parseHttpGrindBody(body);
         const adminMode = isAdminRequest(req);
-        const unthrottled = adminMode && Boolean((body as Record<string, unknown>).unthrottled);
+        const adminPerf = adminMode
+          ? resolveAdminPerfMode(body as Record<string, unknown>)
+          : "standard";
 
         if (!go.prefix && !go.suffix) {
           log.warn("http_grind_reject_empty_pattern", { origin: req.headers.get("origin") ?? null });
@@ -575,14 +578,13 @@ async function runServer() {
 
         let goForGrind: GrindOpts;
         let capInfo = computeDeployWorkerCap();
-        if (adminMode && unthrottled) {
-          goForGrind = applyAdminOpts(go, true);
-          log.info("http_grind_admin_unthrottled", {
+        if (adminMode) {
+          goForGrind = applyAdminOpts(go, adminPerf);
+          log.info("http_grind_admin_perf", {
+            perfMode: adminPerf,
             threads: goForGrind.threads,
             maxWorkers: goForGrind.maxWorkers,
           });
-        } else if (adminMode) {
-          goForGrind = applyAdminOpts(go, false);
         } else {
           goForGrind = {
             ...go,
@@ -699,7 +701,7 @@ async function runServer() {
             (msg) => sseSend("bin", { workerId: msg.workerId, score: msg.score, address: msg.address }),
             req.signal,
           );
-          if (adminMode && unthrottled) return await run();
+          if (adminMode && adminPerf !== "standard") return await run();
           return await runDeploySerialized(run);
         };
 
@@ -870,8 +872,8 @@ async function runServer() {
           if (!go.prefix && !go.suffix) {
             return done(Response.json({ error: "prefix or suffix required" }, { status: 400 }));
           }
-          const unthrottled = Boolean(body.unthrottled);
-          const jobOrErr = startBackgroundJob(go, unthrottled, async (opts, hooks, signal) => {
+          const perfMode = resolveAdminPerfMode(body);
+          const jobOrErr = startBackgroundJob(go, perfMode, async (opts, hooks, signal) => {
             return grind(
               opts,
               (p) => hooks.onProgress(p as Record<string, unknown>),

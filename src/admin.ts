@@ -15,10 +15,14 @@ export type ThresholdCapture = {
 
 export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
 
+export type AdminPerfMode = "standard" | "unthrottled" | "extreme";
+
 export type AdminJob = {
   id: string;
   status: JobStatus;
   opts: GrindOpts;
+  perfMode: AdminPerfMode;
+  /** @deprecated use perfMode */
   unthrottled: boolean;
   createdAt: number;
   startedAt: number | null;
@@ -98,24 +102,62 @@ export function isAdminRequest(req: Request): boolean {
   return true;
 }
 
-/** ~90% of reported CPUs for threads; high maxWorkers when admin unthrottled. */
-export function computeAdminWorkerLimits(unthrottled: boolean): { threads: number; maxWorkers: number } {
-  const cores = Math.max(1, cpuCount);
-  const threads = Math.max(1, Math.floor(cores * 0.9));
-  const maxWorkers = unthrottled
-    ? Math.min(512, Math.max(threads, Math.floor(cores * 2.5)))
-    : threads;
-  return { threads, maxWorkers };
+export function resolveAdminPerfMode(body: {
+  perfMode?: string;
+  extreme?: boolean;
+  unthrottled?: boolean;
+}): AdminPerfMode {
+  const raw = String(body.perfMode ?? "").trim().toLowerCase();
+  if (raw === "extreme" || body.extreme === true) return "extreme";
+  if (raw === "unthrottled" || body.unthrottled === true) return "unthrottled";
+  if (raw === "standard" || raw === "normal") return "standard";
+  return "standard";
 }
 
-export function applyAdminOpts(base: GrindOpts, unthrottled: boolean): GrindOpts {
-  const lim = computeAdminWorkerLimits(unthrottled);
+/** Worker caps per admin performance mode. */
+export function computeAdminWorkerLimits(mode: AdminPerfMode): {
+  threads: number;
+  maxWorkers: number;
+  label: string;
+} {
+  const cores = Math.max(1, cpuCount);
+  if (mode === "extreme") {
+    return {
+      threads: cores,
+      maxWorkers: cores,
+      label: `extreme · ${cores}/${cores} cores`,
+    };
+  }
+  if (mode === "unthrottled") {
+    const threads = Math.max(1, Math.floor(cores * 0.9));
+    return {
+      threads,
+      maxWorkers: Math.min(512, Math.max(threads, Math.floor(cores * 2.5))),
+      label: `unthrottled · ~90% (${threads} threads)`,
+    };
+  }
+  const threads = Math.min(cores, Math.max(1, Math.floor(cores * 0.75)));
+  return {
+    threads,
+    maxWorkers: Math.max(threads, cores),
+    label: `standard · ${threads} threads`,
+  };
+}
+
+export function applyAdminOpts(base: GrindOpts, perfMode: AdminPerfMode): GrindOpts {
+  const lim = computeAdminWorkerLimits(perfMode);
+  const turbo = perfMode !== "standard";
   return {
     ...base,
-    threads: lim.threads,
-    maxWorkers: lim.maxWorkers,
-    bunOversubscribe: unthrottled && RUNTIME === "bun" ? 1.5 : base.bunOversubscribe,
-    progressEvery: unthrottled ? Math.max(64, Math.min(base.progressEvery, 256)) : base.progressEvery,
+    threads: turbo ? lim.threads : Math.min(base.threads, lim.maxWorkers),
+    maxWorkers: turbo ? lim.maxWorkers : Math.min(base.maxWorkers, lim.maxWorkers),
+    bunOversubscribe:
+      perfMode === "extreme" && RUNTIME === "bun"
+        ? 1
+        : perfMode === "unthrottled" && RUNTIME === "bun"
+        ? Math.max(base.bunOversubscribe, 1.5)
+        : base.bunOversubscribe,
+    progressEvery: turbo ? Math.max(64, Math.min(base.progressEvery, 4096)) : base.progressEvery,
   };
 }
 
@@ -132,9 +174,13 @@ export type ResourceMonitor = {
   runtime: string;
   cpuCount: number;
   adminThreadsCap: number;
+  adminExtremeThreads: number;
+  adminUnthrottledThreads: number;
+  adminPerfLabels: Record<AdminPerfMode, string>;
   memoryTotalMB: number | null;
   memoryFreeMB: number | null;
   memoryUsedMB: number | null;
+  memoryFreePercent: number | null;
   rssMB: number | null;
   heapUsedMB: number | null;
   heapTotalMB: number | null;
@@ -145,7 +191,9 @@ export type ResourceMonitor = {
 };
 
 export async function getResourceMonitor(): Promise<ResourceMonitor> {
-  const lim = computeAdminWorkerLimits(true);
+  const limStd = computeAdminWorkerLimits("standard");
+  const limTurbo = computeAdminWorkerLimits("unthrottled");
+  const limExt = computeAdminWorkerLimits("extreme");
   let memoryTotalMB: number | null = null;
   let memoryFreeMB: number | null = null;
   let rssMB: number | null = null;
@@ -176,15 +224,28 @@ export async function getResourceMonitor(): Promise<ResourceMonitor> {
   const memoryUsedMB =
     memoryTotalMB != null && memoryFreeMB != null ? memoryTotalMB - memoryFreeMB : null;
 
+  const memoryFreePercent =
+    memoryTotalMB != null && memoryFreeMB != null && memoryTotalMB > 0
+      ? Math.round((memoryFreeMB / memoryTotalMB) * 100)
+      : null;
+
   const all = listJobs();
   return {
     ts: Date.now(),
     runtime: RUNTIME,
     cpuCount,
-    adminThreadsCap: lim.threads,
+    adminThreadsCap: limTurbo.threads,
+    adminExtremeThreads: limExt.threads,
+    adminUnthrottledThreads: limTurbo.threads,
+    adminPerfLabels: {
+      standard: limStd.label,
+      unthrottled: limTurbo.label,
+      extreme: limExt.label,
+    },
     memoryTotalMB,
     memoryFreeMB,
     memoryUsedMB,
+    memoryFreePercent,
     rssMB,
     heapUsedMB,
     heapTotalMB,
@@ -206,17 +267,18 @@ export type JobRunner = (
 
 export function startBackgroundJob(
   baseOpts: GrindOpts,
-  unthrottled: boolean,
+  perfMode: AdminPerfMode,
   runGrind: JobRunner,
 ): AdminJob | { error: string } {
   if (!adminPasswordConfigured()) return { error: "admin not configured" };
   const id = `job-${Date.now()}-${++jobSeq}`;
-  const opts = applyAdminOpts(baseOpts, unthrottled);
+  const opts = applyAdminOpts(baseOpts, perfMode);
   const job: AdminJob = {
     id,
     status: "queued",
     opts,
-    unthrottled,
+    perfMode,
+    unthrottled: perfMode === "unthrottled",
     createdAt: Date.now(),
     startedAt: null,
     finishedAt: null,
@@ -233,7 +295,7 @@ export function startBackgroundJob(
     job.status = "running";
     job.startedAt = Date.now();
     const wall0 = Date.now();
-    log.info("admin_job_start", { id, unthrottled, threads: opts.threads, maxWorkers: opts.maxWorkers });
+    log.info("admin_job_start", { id, perfMode, threads: opts.threads, maxWorkers: opts.maxWorkers });
     try {
       const hits = await runGrind(
         opts,
