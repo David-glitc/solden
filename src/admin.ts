@@ -1,50 +1,45 @@
-// Admin auth, background jobs, resource monitoring, unthrottled worker caps.
+// Admin background jobs, resource monitoring, unthrottled worker caps.
 import { createLogger } from "./log.ts";
 import { cpuCount, RUNTIME } from "./runtime.ts";
-import type { GrindOpts, GrindResult } from "./types.ts";
+import {
+  deleteStoredAdminJob,
+  initAdminJobStore,
+  listStoredAdminJobs,
+  saveAdminJob,
+} from "./admin_store.ts";
+import {
+  adminPasswordConfigured,
+  createAdminSession,
+  extractAdminToken,
+  isAdminRequest,
+  verifyAdminPassword,
+} from "./admin_auth.ts";
+import type {
+  AdminJob,
+  AdminJobStatus,
+  AdminPerfMode,
+  GrindOpts,
+  GrindResult,
+  ThresholdCapture,
+} from "./types.ts";
+
+export type { AdminJob, AdminJobStatus, AdminPerfMode, ThresholdCapture };
+export {
+  adminPasswordConfigured,
+  createAdminSession,
+  extractAdminToken,
+  isAdminRequest,
+  verifyAdminPassword,
+};
 
 const log = createLogger("admin");
 
-export type ThresholdCapture = {
-  address: string;
-  publicKey: string;
-  secretKey: string;
-  score: number;
-  foundAt: number;
-};
-
-export type JobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
-
-export type AdminPerfMode = "standard" | "unthrottled" | "extreme";
-
-export type AdminJob = {
-  id: string;
-  status: JobStatus;
-  opts: GrindOpts;
-  perfMode: AdminPerfMode;
-  /** @deprecated use perfMode */
-  unthrottled: boolean;
-  createdAt: number;
-  startedAt: number | null;
-  finishedAt: number | null;
-  hits: GrindResult[];
-  thresholdHits: ThresholdCapture[];
-  error: string | null;
-  progress: {
-    totalChecked: number;
-    aggregateKps: number;
-    bestScorePercent: number;
-    wallElapsedSec: number;
-  };
-};
-
-type Session = { expiresAt: number };
-
-const sessions = new Map<string, Session>();
 const jobs = new Map<string, AdminJob>();
 const jobRunners = new Map<string, AbortController>();
+const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let jobSeq = 0;
+let storeLoaded = false;
 
 function env(name: string): string | undefined {
   if (typeof (globalThis as any).Deno !== "undefined") {
@@ -55,51 +50,44 @@ function env(name: string): string | undefined {
   return undefined;
 }
 
-export function adminPasswordConfigured(): boolean {
-  return Boolean((env("VANITY_ADMIN_PASSWORD") ?? "").length > 0);
-}
-
-export function verifyAdminPassword(password: string): boolean {
-  const expected = env("VANITY_ADMIN_PASSWORD") ?? "";
-  if (!expected) return false;
-  return password === expected;
-}
-
-function newToken(): string {
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-export function createAdminSession(): { token: string; expiresAt: number } | null {
-  if (!adminPasswordConfigured()) return null;
-  const token = newToken();
-  const expiresAt = Date.now() + 12 * 60 * 60 * 1000;
-  sessions.set(token, { expiresAt });
-  return { token, expiresAt };
-}
-
-export function revokeAdminSession(token: string): void {
-  sessions.delete(token);
-}
-
-export function extractAdminToken(req: Request): string | null {
-  const auth = req.headers.get("authorization") ?? "";
-  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
-  const cookie = req.headers.get("cookie") ?? "";
-  const m = cookie.match(/(?:^|;\s*)vanity_admin=([^;]+)/);
-  return m ? decodeURIComponent(m[1]!) : null;
-}
-
-export function isAdminRequest(req: Request): boolean {
-  const token = extractAdminToken(req);
-  if (!token) return false;
-  const s = sessions.get(token);
-  if (!s || s.expiresAt < Date.now()) {
-    sessions.delete(token);
-    return false;
+async function ensureJobsHydrated(): Promise<void> {
+  if (storeLoaded) return;
+  await initAdminJobStore(env("VANITY_DB_PATH") ?? "vanity.db");
+  const stored = await listStoredAdminJobs();
+  for (const j of stored) {
+    const reconciled = reconcileStoredJob(j);
+    jobs.set(j.id, reconciled);
+    if (reconciled !== j) void saveAdminJob(reconciled);
   }
-  return true;
+  storeLoaded = true;
+}
+
+function reconcileStoredJob(job: AdminJob): AdminJob {
+  if ((job.status === "running" || job.status === "queued") && !jobRunners.has(job.id)) {
+    return {
+      ...job,
+      status: "failed",
+      error: "worker lost (server restart or different isolate)",
+      finishedAt: job.finishedAt ?? Date.now(),
+    };
+  }
+  return job;
+}
+
+function persistJob(job: AdminJob, immediate = false): void {
+  jobs.set(job.id, job);
+  const run = () => {
+    persistTimers.delete(job.id);
+    void saveAdminJob(job).catch((e) => log.warn("admin_job_persist_failed", { id: job.id, err: String(e) }));
+  };
+  if (immediate) {
+    const t = persistTimers.get(job.id);
+    if (t) clearTimeout(t);
+    run();
+    return;
+  }
+  if (persistTimers.has(job.id)) return;
+  persistTimers.set(job.id, setTimeout(run, 900));
 }
 
 export function resolveAdminPerfMode(body: {
@@ -161,11 +149,13 @@ export function applyAdminOpts(base: GrindOpts, perfMode: AdminPerfMode): GrindO
   };
 }
 
-export function listJobs(): AdminJob[] {
+export async function listJobs(): Promise<AdminJob[]> {
+  await ensureJobsHydrated();
   return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
-export function getJob(id: string): AdminJob | undefined {
+export async function getJob(id: string): Promise<AdminJob | undefined> {
+  await ensureJobsHydrated();
   return jobs.get(id);
 }
 
@@ -229,7 +219,7 @@ export async function getResourceMonitor(): Promise<ResourceMonitor> {
       ? Math.round((memoryFreeMB / memoryTotalMB) * 100)
       : null;
 
-  const all = listJobs();
+  const all = [...jobs.values()];
   return {
     ts: Date.now(),
     runtime: RUNTIME,
@@ -287,13 +277,14 @@ export function startBackgroundJob(
     error: null,
     progress: { totalChecked: 0, aggregateKps: 0, bestScorePercent: 0, wallElapsedSec: 0 },
   };
-  jobs.set(id, job);
+  persistJob(job, true);
   const ac = new AbortController();
   jobRunners.set(id, ac);
 
   void (async () => {
     job.status = "running";
     job.startedAt = Date.now();
+    persistJob(job, true);
     const wall0 = Date.now();
     log.info("admin_job_start", { id, perfMode, threads: opts.threads, maxWorkers: opts.maxWorkers });
     try {
@@ -307,9 +298,11 @@ export function startBackgroundJob(
               bestScorePercent: Number(p.bestScorePercent ?? 0),
               wallElapsedSec: Number(((Date.now() - wall0) / 1000).toFixed(2)),
             };
+            persistJob(job);
           },
           onThreshold: (t) => {
             job.thresholdHits.push(t);
+            persistJob(job, true);
             log.info("admin_threshold_hit", { jobId: id, score: t.score, address: t.address.slice(0, 8) + "…" });
           },
         },
@@ -331,6 +324,7 @@ export function startBackgroundJob(
     } finally {
       job.finishedAt = Date.now();
       jobRunners.delete(id);
+      persistJob(job, true);
     }
   })();
 
@@ -349,6 +343,7 @@ export function cancelJob(id: string): boolean {
     job.finishedAt = Date.now();
     if (ac) ac.abort();
     jobRunners.delete(id);
+    persistJob(job, true);
     log.info("admin_job_cancelled_queued", { id });
     return true;
   }
@@ -360,21 +355,25 @@ export function cancelJob(id: string): boolean {
 }
 
 /** Remove job from memory; cancels if still active. */
-export function deleteJob(id: string): boolean {
+export async function deleteJob(id: string): Promise<boolean> {
+  await ensureJobsHydrated();
   const job = jobs.get(id);
   if (!job) return false;
   if (job.status === "running" || job.status === "queued") cancelJob(id);
   jobs.delete(id);
   jobRunners.delete(id);
+  await deleteStoredAdminJob(id).catch(() => {});
   log.info("admin_job_deleted", { id, status: job.status });
   return true;
 }
 
-export function deleteFinishedJobs(): number {
+export async function deleteFinishedJobs(): Promise<number> {
+  await ensureJobsHydrated();
   let n = 0;
   for (const [id, j] of jobs) {
     if (j.status !== "running" && j.status !== "queued") {
       jobs.delete(id);
+      await deleteStoredAdminJob(id).catch(() => {});
       n++;
     }
   }
@@ -405,8 +404,8 @@ function readRssMB(): number | null {
 /** Drop finished jobs and nudge GC (best-effort; isolate RSS may not drop on Deploy). */
 export async function adminMemoryCleanup(): Promise<MemoryCleanupResult> {
   const rssMBBefore = readRssMB();
-  const removedJobs = deleteFinishedJobs();
-  const prunedOld = pruneOldJobs(0);
+  const removedJobs = await deleteFinishedJobs();
+  const prunedOld = await pruneOldJobs(0);
   let gcAttempted = false;
   try {
     const g = (globalThis as any).gc;
@@ -457,14 +456,21 @@ export function adminRequestRestart(): { ok: boolean; message: string } {
 }
 
 /** Prune finished jobs older than maxAgeMs (default 24h). */
-export function pruneOldJobs(maxAgeMs = 24 * 60 * 60 * 1000): number {
+export async function pruneOldJobs(maxAgeMs = 24 * 60 * 60 * 1000): Promise<number> {
+  await ensureJobsHydrated();
   const cutoff = Date.now() - maxAgeMs;
   let n = 0;
   for (const [id, j] of jobs) {
     if (j.finishedAt != null && j.finishedAt < cutoff) {
       jobs.delete(id);
+      await deleteStoredAdminJob(id).catch(() => {});
       n++;
     }
   }
   return n;
+}
+
+export async function initAdmin(dbPath = "vanity.db"): Promise<void> {
+  await initAdminJobStore(dbPath);
+  await ensureJobsHydrated();
 }

@@ -138,6 +138,11 @@
 - **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
 - **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
 
+## 2026-05-15 — Admin fix: stateless auth, job persistence, SSE UI
+- **`src/admin_auth.ts`:** HMAC signed tokens (no in-memory sessions) — fixes 401 on Deno Deploy isolates.
+- **`src/admin_store.ts`:** Jobs persisted to Deno KV (Deploy) or SQLite `admin_jobs` table (local).
+- **`static/admin.html`:** Simpler flex/grid UI; `EventSource` `/admin/api/stream` for live jobs + monitor; no logout on transient errors.
+
 ## 2026-05-15 — Admin: delete jobs, live refresh, memory cleanup, restart
 - **`src/admin.ts`:** `deleteJob`, `deleteFinishedJobs`, `adminMemoryCleanup` (GC + drop finished jobs), `adminRequestRestart` (env-gated).
 - **`src/main.ts`:** `DELETE /admin/api/jobs/:id` removes job (`?cancel=1` to cancel only); `POST /admin/api/system/cleanup`, `POST /admin/api/system/restart`.

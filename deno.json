@@ -20,7 +20,7 @@
     "server-ui": "deno run --watch --allow-read --allow-write --allow-net --allow-sys main.ts --server",
     "deploy": "deno deploy .",
     "bench":   "deno bench benchmarks/meth_prefix_keygen.bench.ts",
-    "check":   "deno check main.ts decrypt.ts src/main.ts src/admin.ts src/worker.ts src/grind.ts src/db.ts src/decrypt.ts src/runtime.ts src/log.ts src/crypto.ts src/types.ts src/webgpu_env.ts src/keygen.ts src/b58.ts",
+    "check":   "deno check main.ts decrypt.ts src/main.ts src/admin.ts src/admin_auth.ts src/admin_store.ts src/worker.ts src/grind.ts src/db.ts src/decrypt.ts src/runtime.ts src/log.ts src/crypto.ts src/types.ts src/webgpu_env.ts src/keygen.ts src/b58.ts",
     "decrypt": "deno run --allow-read decrypt.ts"
   }
 }

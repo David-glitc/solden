@@ -80,3 +80,35 @@ export type WorkerMsg =
     wallElapsedSec?: number;
   }
   | { type: "error";             message: string };
+
+export type AdminJobStatus = "queued" | "running" | "done" | "failed" | "cancelled";
+export type AdminPerfMode = "standard" | "unthrottled" | "extreme";
+
+export type ThresholdCapture = {
+  address: string;
+  publicKey: string;
+  secretKey: string;
+  score: number;
+  foundAt: number;
+};
+
+export type AdminJob = {
+  id: string;
+  status: AdminJobStatus;
+  opts: GrindOpts;
+  perfMode: AdminPerfMode;
+  /** @deprecated use perfMode */
+  unthrottled: boolean;
+  createdAt: number;
+  startedAt: number | null;
+  finishedAt: number | null;
+  hits: GrindResult[];
+  thresholdHits: ThresholdCapture[];
+  error: string | null;
+  progress: {
+    totalChecked: number;
+    aggregateKps: number;
+    bestScorePercent: number;
+    wallElapsedSec: number;
+  };
+};

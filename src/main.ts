@@ -21,12 +21,11 @@ import {
   cancelJob,
   createAdminSession,
   deleteJob,
-  extractAdminToken,
   getJob,
   getResourceMonitor,
+  initAdmin,
   isAdminRequest,
   listJobs,
-  revokeAdminSession,
   startBackgroundJob,
   verifyAdminPassword,
   type ThresholdCapture,
@@ -469,6 +468,7 @@ async function runServer() {
   console.log(BANNER);
   console.log(`\x1b[32m🌐  http://0.0.0.0:${port}\x1b[0m\n`);
   log.info("server_listen", { port, dbPath, runtime: RUNTIME, httpEphemeralHits: httpUsesEphemeralHits() });
+  await initAdmin(dbPath).catch((e) => log.warn("admin_init_failed", { err: String(e) }));
 
   const corsConfigured = Boolean((env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim());
 
@@ -596,7 +596,7 @@ async function runServer() {
         }
 
         const go = parseHttpGrindBody(body);
-        const adminMode = isAdminRequest(req);
+        const adminMode = await isAdminRequest(req);
         const adminPerf = adminMode
           ? resolveAdminPerfMode(body as Record<string, unknown>)
           : "standard";
@@ -848,14 +848,12 @@ async function runServer() {
         if (!verifyAdminPassword(pw)) {
           return done(Response.json({ error: "invalid password" }, { status: 401 }));
         }
-        const sess = createAdminSession();
+        const sess = await createAdminSession();
         if (!sess) return done(Response.json({ error: "admin not configured" }, { status: 503 }));
         return done(Response.json(sess));
       }
 
       if (req.method === "POST" && url.pathname === "/admin/api/logout") {
-        const tok = extractAdminToken(req);
-        if (tok) revokeAdminSession(tok);
         return done(Response.json({ ok: true }));
       }
 
@@ -864,7 +862,7 @@ async function runServer() {
       }
 
       if (url.pathname.startsWith("/admin/api/")) {
-        if (!isAdminRequest(req)) {
+        if (!await isAdminRequest(req)) {
           return done(Response.json({ error: "unauthorized" }, { status: 401 }));
         }
 
@@ -873,19 +871,53 @@ async function runServer() {
         }
 
         if (req.method === "GET" && url.pathname === "/admin/api/jobs") {
-          return done(Response.json(listJobs()));
+          return done(Response.json(await listJobs()));
+        }
+
+        if (req.method === "GET" && url.pathname === "/admin/api/stream") {
+          const enc = new TextEncoder();
+          let closed = false;
+          const stream = new ReadableStream({
+            start(controller) {
+              const push = async () => {
+                if (closed) return;
+                try {
+                  const [jobs, monitor] = await Promise.all([listJobs(), getResourceMonitor()]);
+                  const line = JSON.stringify({ type: "snapshot", jobs, monitor, ts: Date.now() });
+                  controller.enqueue(enc.encode(`data: ${line}\n\n`));
+                } catch (e) {
+                  const err = e instanceof Error ? e.message : String(e);
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ type: "error", error: err })}\n\n`));
+                }
+              };
+              void push();
+              const iv = setInterval(() => { void push(); }, 1000);
+              req.signal.addEventListener("abort", () => {
+                closed = true;
+                clearInterval(iv);
+                try { controller.close(); } catch { /* ignore */ }
+              });
+            },
+          });
+          return done(new Response(stream, {
+            headers: {
+              "content-type": "text/event-stream; charset=utf-8",
+              "cache-control": "no-cache",
+              connection: "keep-alive",
+            },
+          }));
         }
 
         const jobMatch = url.pathname.match(/^\/admin\/api\/jobs\/([^/]+)$/);
         if (jobMatch) {
           const jobId = jobMatch[1]!;
           if (req.method === "GET") {
-            const job = getJob(jobId);
+            const job = await getJob(jobId);
             if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
             return done(Response.json(job));
           }
           if (req.method === "DELETE") {
-            const job = getJob(jobId);
+            const job = await getJob(jobId);
             if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
             const cancelOnly = url.searchParams.get("cancel") === "1";
             if (cancelOnly) {
@@ -895,9 +927,10 @@ async function runServer() {
                   status: job.status,
                 }, { status: 409 }));
               }
-              return done(Response.json({ ok: true, id: jobId, status: getJob(jobId)?.status ?? "cancelled" }));
+              const updated = await getJob(jobId);
+              return done(Response.json({ ok: true, id: jobId, status: updated?.status ?? "cancelled" }));
             }
-            if (!deleteJob(jobId)) {
+            if (!await deleteJob(jobId)) {
               return done(Response.json({ error: "delete failed" }, { status: 409 }));
             }
             return done(Response.json({ ok: true, id: jobId, deleted: true }));
