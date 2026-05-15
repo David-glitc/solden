@@ -115,6 +115,12 @@
 ## 2026-05-14 — Panel copy: end-user friendly status (no CPU line)
 - **`static/index.html`:** Status bar hides **runtime / CPU / region / worker-cap** strings; short **plain-language** ready and error lines. Hero, stat cards, form labels, hints, and errors reworded for non-technical readers; **Troubleshooting log** (was Technical diagnostics); throughput uses **parallel lanes**; **Start search** button; page title and accuracy copy softened.
 
+## 2026-05-15 — Admin panel, threshold keys UI, worker eval fast path
+- **`src/admin.ts`:** `VANITY_ADMIN_PASSWORD` sessions; background jobs (survive disconnect); `/admin/api/monitor`; unthrottled ~90% CPU worker caps via `applyAdminOpts`.
+- **`static/admin.html`:** Login, resource monitor, spawn/list/cancel jobs, copy/keypair for threshold+ hits.
+- **`static/index.html`:** Header light text; **4 taps** on logo → `/admin.html`; **Near matches** section with copy + keypair; NDJSON/SSE `threshold` lines.
+- **`src/worker.ts`:** Single-pass `evalAddr` (score + hit); defer secret b58 encode until threshold/hit.
+
 ## 2026-05-14 — `src/` layout; root entry shims
 - **Moved:** application modules to **`src/`** (`main`, `worker`, `grind`, `db`, `crypto`, `log`, `runtime`, `types`, `webgpu_env`, `decrypt`). **Repo root** keeps thin **`main.ts`** / **`decrypt.ts`** that `import "./src/…"` so **`deno run main.ts`**, **`deno task`**, and Deno Deploy default entry stay on familiar paths.
 - **`src/main.ts`:** loads **`../static/index.html`** and **`../static/solden-mark.svg`**. **`deno task check`** typechecks root shims + all **`src/*.ts`**. **`README.md`** layout table updated.

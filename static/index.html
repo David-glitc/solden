@@ -74,7 +74,7 @@
         
         header {
             background: linear-gradient(155deg, #121212 0%, #0a0a0a 55%, #101010 100%);
-            color: var(--paper);
+            color: #f8fafc;
             border-radius: var(--radius-lg);
             padding: 22px 26px;
             margin-bottom: 22px;
@@ -121,7 +121,7 @@
             font-weight: 700;
             letter-spacing: 0.16em;
             text-transform: uppercase;
-            opacity: 0.72;
+            color: #e2e8f0;
         }
         
         header h1 {
@@ -130,12 +130,13 @@
             font-weight: 650;
             letter-spacing: -0.02em;
             line-height: 1.2;
+            color: #ffffff;
         }
         
         .brand-desc {
             margin: 10px 0 0;
             font-size: 0.92rem;
-            opacity: 0.88;
+            color: #cbd5e1;
             max-width: 56ch;
             line-height: 1.45;
         }
@@ -149,9 +150,13 @@
             text-transform: uppercase;
             padding: 6px 12px;
             border-radius: 999px;
-            background: rgba(255, 255, 255, 0.12);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            color: #f0f0f0;
+            background: rgba(255, 255, 255, 0.14);
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            color: #f8fafc;
+        }
+
+        header a {
+            color: #93c5fd;
         }
         
         .server-bar {
@@ -877,8 +882,8 @@
 <body data-api-base="">
     <a class="skip-link" href="#main">Skip to content</a>
     <main class="shell" id="main">
-        <header>
-            <div class="brand-lockup">
+        <header id="appHeader" title="Tap logo 4 times quickly for admin">
+            <div class="brand-lockup" id="adminTapZone">
                 <div class="brand-mark">
                     <div class="brand-mark-inner">
                         <img src="/solden-mark.svg" width="56" height="56" alt="Solden logo" decoding="async" />
@@ -964,6 +969,12 @@
             <p class="hint-short">Add a <strong>prefix</strong> (start), a <strong>suffix</strong> (end), or both. Tip: hover any label for a short explanation.</p>
         </div>
 
+        <div id="thresholdSection" class="card results-card" style="margin-top:18px" hidden>
+            <h3>Near matches (at or above threshold)</h3>
+            <p class="card-lead" style="margin-bottom:12px">These keys met your near-match setting — copy the secret or download a keypair file.</p>
+            <div id="thresholdInner"></div>
+        </div>
+
         <div id="resultsSection" class="card results-card" style="margin-top:18px" hidden>
             <h3>Results</h3>
             <p id="grindElapsedBanner" class="grind-elapsed" hidden aria-live="polite"></p>
@@ -1021,6 +1032,9 @@
             let streamInstKps = 0;
             let streamAvgKps = 0;
             let lastHits = [];
+            let lastThresholdHits = [];
+            const thresholdSection = q("thresholdSection");
+            const thresholdInner = q("thresholdInner");
             let timerId = null;
             let grindStartedAt = 0;
             let clientGrindActive = false;
@@ -1258,9 +1272,11 @@
                             continue;
                         }
                         if (d.type === "progress") applyGrindProgressFromServer(d);
+                        else if (d.type === "threshold") addThresholdHit(d);
                         else if (d.type === "done") return {
                             kind: "done",
                             hits: d.hits || [],
+                            thresholdHits: d.thresholdHits || [],
                             wallElapsedSec: typeof d.wallElapsedSec === "number" ? d.wallElapsedSec : null,
                         };
                         else if (d.type === "cancelled") return {
@@ -1280,9 +1296,11 @@
                         if (d2.type === "started") {
                             if (hooks && typeof hooks.onStarted === "function") hooks.onStarted(d2);
                         } else if (d2.type === "progress") applyGrindProgressFromServer(d2);
+                        else if (d2.type === "threshold") addThresholdHit(d2);
                         else if (d2.type === "done") return {
                             kind: "done",
                             hits: d2.hits || [],
+                            thresholdHits: d2.thresholdHits || [],
                             wallElapsedSec: typeof d2.wallElapsedSec === "number" ? d2.wallElapsedSec : null,
                         };
                         else if (d2.type === "cancelled") return {
@@ -1353,6 +1371,73 @@
                 a.click();
                 URL.revokeObjectURL(a.href);
                 toast("Downloaded");
+            }
+
+            function addThresholdHit(h) {
+                if (!h || !h.address || !h.secretKey) return;
+                for (var i = 0; i < lastThresholdHits.length; i++) {
+                    if (lastThresholdHits[i].address === h.address) return;
+                }
+                lastThresholdHits.push({
+                    address: h.address,
+                    publicKey: h.publicKey || "",
+                    secretKey: h.secretKey,
+                    score: h.score || 0,
+                    foundAt: h.foundAt || Date.now(),
+                });
+                renderThresholdHits();
+            }
+
+            function downloadKeypairForHit(h) {
+                if (!h || !h.secretKey) return toast("No secret");
+                try {
+                    var raw = base58Decode(h.secretKey);
+                    if (raw.length !== 64) return toast("Unexpected secret length");
+                    downloadBlob("threshold-keypair-" + Date.now() + ".json", "application/json", JSON.stringify(Array.from(raw)));
+                } catch (e) {
+                    toast("Could not build keypair file");
+                }
+            }
+
+            function renderThresholdHits() {
+                if (!thresholdInner) return;
+                thresholdInner.innerHTML = "";
+                if (!lastThresholdHits.length) {
+                    if (thresholdSection) thresholdSection.hidden = true;
+                    return;
+                }
+                lastThresholdHits.forEach(function(h, idx) {
+                    var wrap = document.createElement("div");
+                    wrap.className = "hit-block";
+                    var title = document.createElement("h4");
+                    title.textContent = "Near match " + (idx + 1) + " · " + h.score + "%";
+                    wrap.appendChild(title);
+                    var kv = document.createElement("div");
+                    kv.className = "kv";
+                    var k = document.createElement("div");
+                    k.className = "k";
+                    k.textContent = "Address";
+                    var v = document.createElement("div");
+                    v.className = "v mono";
+                    v.textContent = h.address;
+                    var b1 = document.createElement("button");
+                    b1.type = "button";
+                    b1.className = "btn-sm";
+                    b1.textContent = "Copy secret";
+                    b1.onclick = function() { copyText(h.secretKey); };
+                    var b2 = document.createElement("button");
+                    b2.type = "button";
+                    b2.className = "btn-sm";
+                    b2.textContent = "Keypair.json";
+                    b2.onclick = function() { downloadKeypairForHit(h); };
+                    kv.appendChild(k);
+                    kv.appendChild(v);
+                    kv.appendChild(b1);
+                    kv.appendChild(b2);
+                    wrap.appendChild(kv);
+                    thresholdInner.appendChild(wrap);
+                });
+                if (thresholdSection) thresholdSection.hidden = false;
             }
 
             function renderHits(hits) {
@@ -1449,6 +1534,24 @@
             es.addEventListener("progress", function(ev) {
                 applyGrindProgressFromServer(safeJsonParse(ev.data));
             });
+            es.addEventListener("threshold", function(ev) {
+                addThresholdHit(safeJsonParse(ev.data));
+            });
+
+            (function wireAdminTap() {
+                var zone = q("adminTapZone");
+                if (!zone) return;
+                var taps = [];
+                zone.addEventListener("click", function() {
+                    var now = Date.now();
+                    taps = taps.filter(function(t) { return now - t < 900; });
+                    taps.push(now);
+                    if (taps.length >= 4) {
+                        taps = [];
+                        window.location.href = "/admin.html";
+                    }
+                });
+            })();
 
             var bootMs = 10000;
             fetchWithTimeout(apiUrl("/health"), {
@@ -1571,6 +1674,9 @@
                 if (resultsInner) resultsInner.innerHTML = "";
                 if (resultsSection) resultsSection.hidden = true;
                 lastHits = [];
+                lastThresholdHits = [];
+                if (thresholdInner) thresholdInner.innerHTML = "";
+                if (thresholdSection) thresholdSection.hidden = true;
                 streamInstKps = 0;
                 streamAvgKps = 0;
                 if (throughputLive) throughputLive.textContent = "—";
@@ -1652,11 +1758,15 @@
                             if (out.wallElapsedSec != null && Number.isFinite(out.wallElapsedSec)) {
                                 finalWallMsFromServer = Math.round(out.wallElapsedSec * 1000);
                             }
+                            if (out.thresholdHits && out.thresholdHits.length) {
+                                out.thresholdHits.forEach(addThresholdHit);
+                            }
                             var wallToastNd = finalWallMsFromServer != null
                                 ? finalWallMsFromServer
                                 : (Date.now() - grindStartedAt);
                             renderHits(out.hits);
-                            toast("Done · " + out.hits.length + " hit(s) · " + formatGrindClock(wallToastNd));
+                            var thN = lastThresholdHits.length;
+                            toast("Done · " + out.hits.length + " hit(s)" + (thN ? " · " + thN + " near match" : "") + " · " + formatGrindClock(wallToastNd));
                         } else if (out.kind === "cancelled") {
                             toast("Cancelled");
                         } else {
@@ -1667,10 +1777,14 @@
                     }
                     var text = await r.text();
                     var j = safeJsonParse(text);
-                    if (!Array.isArray(j)) {
+                    var hitsArr = Array.isArray(j) ? j : (j && j.hits ? j.hits : null);
+                    if (!hitsArr) {
                         showError("That response was not recognized. Try refreshing the page.");
                         diagLine(text.slice(0, 800));
                         return;
+                    }
+                    if (j && j.thresholdHits && j.thresholdHits.length) {
+                        j.thresholdHits.forEach(addThresholdHit);
                     }
                     var wallHdr = r.headers.get("x-grind-wall-ms");
                     if (wallHdr) {
@@ -1681,8 +1795,8 @@
                     var wallToastJson = finalWallMsFromServer != null
                         ? finalWallMsFromServer
                         : (Date.now() - grindStartedAt);
-                    renderHits(j);
-                    toast("Done · " + j.length + " hit(s) · " + formatGrindClock(wallToastJson));
+                    renderHits(hitsArr);
+                    toast("Done · " + hitsArr.length + " hit(s) · " + formatGrindClock(wallToastJson));
                 } catch (e) {
                     if (e && (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"))) {
                         toast("Cancelled");

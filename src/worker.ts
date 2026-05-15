@@ -84,18 +84,22 @@ let pfx = "", sfx = "", pfxLen = 0, sfxLen = 0, total = 0;
 let caseSensitive = false, threshold = 90, workerId = 0;
 let progressEvery = 512;
 
-function scoreAddr(addr: string): number {
-  if (total === 0) return 100;
-  const a = caseSensitive ? addr : addr.toLowerCase();
+/** Single pass: match count, full hit, and score (0–100). */
+function evalAddr(addr: string): { score: number; hit: boolean } {
+  if (total === 0) return { score: 100, hit: true };
+  const al = caseSensitive ? addr : addr.toLowerCase();
   let m = 0;
-  for (let i = 0; i < pfxLen; i++) if (a[i] === pfx[i]) m++;
-  for (let i = 0; i < sfxLen; i++) if (a[a.length - sfxLen + i] === sfx[i]) m++;
-  return Math.round((m / total) * 100);
-}
-
-function isHit(addr: string): boolean {
-  const a = caseSensitive ? addr : addr.toLowerCase();
-  return !(pfxLen && !a.startsWith(pfx)) && !(sfxLen && !a.endsWith(sfx));
+  let hit = true;
+  for (let i = 0; i < pfxLen; i++) {
+    if (al[i] === pfx[i]) m++;
+    else hit = false;
+  }
+  for (let i = 0; i < sfxLen; i++) {
+    const j = addr.length - sfxLen + i;
+    if (al[j] === sfx[i]) m++;
+    else hit = false;
+  }
+  return { score: Math.round((m / total) * 100), hit };
 }
 
 // ── tight loop ────────────────────────────────────────────────────────────────
@@ -147,7 +151,7 @@ async function loop() {
   while (true) {
     const { pub, secret } = useNodeKeygen() ? nodePair() : await denoPair();
     const addr = b58(pub);
-    const sc = scoreAddr(addr);
+    const { score: sc, hit } = evalAddr(addr);
     if (sc > windowBestScore) {
       windowBestScore = sc;
       windowBestAddr = addr;
@@ -173,12 +177,17 @@ async function loop() {
       windowBestScore = -1;
       windowBestAddr = "";
     }
-    if (sc >= threshold && sc < 100)
-      postMsg({ type: "threshold", workerId, address: addr, publicKey: b58(pub), secretKey: b58(secret), score: sc });
-    if (sc >= 70 && sc <= 80)
-      postMsg({ type: "bin", workerId, address: addr, publicKey: b58(pub), secretKey: b58(secret), score: sc });
-    if (isHit(addr))
-      postMsg({ type: "hit", workerId, address: addr, publicKey: b58(pub), secretKey: b58(secret), score: 100 });
+    if (hit) {
+      const pk = b58(pub);
+      const sk = b58(secret);
+      postMsg({ type: "hit", workerId, address: addr, publicKey: pk, secretKey: sk, score: 100 });
+    } else if (sc >= threshold) {
+      const pk = b58(pub);
+      const sk = b58(secret);
+      postMsg({ type: "threshold", workerId, address: addr, publicKey: pk, secretKey: sk, score: sc });
+      if (sc >= 70 && sc <= 80)
+        postMsg({ type: "bin", workerId, address: addr, publicKey: pk, secretKey: sk, score: sc });
+    }
   }
 }
 

@@ -11,6 +11,21 @@ import { createEphemeralDb, initDb } from "./db.ts";
 import { grind }      from "./grind.ts";
 import { configureLogging, createLogger, formatElapsedSeconds } from "./log.ts";
 import type { GrindOpts, GrindResult, WorkerMsg } from "./types.ts";
+import {
+  adminPasswordConfigured,
+  applyAdminOpts,
+  cancelJob,
+  createAdminSession,
+  extractAdminToken,
+  getJob,
+  getResourceMonitor,
+  isAdminRequest,
+  listJobs,
+  revokeAdminSession,
+  startBackgroundJob,
+  verifyAdminPassword,
+  type ThresholdCapture,
+} from "./admin.ts";
 
 async function readTextFromModuleUrl(moduleUrl: URL): Promise<string> {
   const { fileURLToPath } = await import("node:url");
@@ -26,8 +41,10 @@ async function readTextFromModuleUrl(moduleUrl: URL): Promise<string> {
 }
 
 const CONTROL_PANEL_HTML = new URL("../static/index.html", import.meta.url);
+const ADMIN_PANEL_HTML = new URL("../static/admin.html", import.meta.url);
 const SOLD_MARK_SVG_URL = new URL("../static/solden-mark.svg", import.meta.url);
 let controlPanelHtmlCache: string | null = null;
+let adminPanelHtmlCache: string | null = null;
 let soldMarkSvgCache: string | null = null;
 
 async function getControlPanelHtml(): Promise<string> {
@@ -40,6 +57,41 @@ async function getSoldMarkSvg(): Promise<string> {
   if (soldMarkSvgCache) return soldMarkSvgCache;
   soldMarkSvgCache = await readTextFromModuleUrl(SOLD_MARK_SVG_URL);
   return soldMarkSvgCache;
+}
+
+async function getAdminPanelHtml(): Promise<string> {
+  if (adminPanelHtmlCache) return adminPanelHtmlCache;
+  adminPanelHtmlCache = await readTextFromModuleUrl(ADMIN_PANEL_HTML);
+  return adminPanelHtmlCache;
+}
+
+function captureThreshold(msg: { address: string; publicKey: string; secretKey: string; score: number }): ThresholdCapture {
+  return {
+    address: msg.address,
+    publicKey: msg.publicKey,
+    secretKey: msg.secretKey,
+    score: msg.score,
+    foundAt: Date.now(),
+  };
+}
+
+function parseHttpGrindBody(body: Partial<GrindOpts>): GrindOpts {
+  const scaleRaw = (body as Record<string, unknown>).threadsMultiplier ?? body.bunOversubscribe;
+  return {
+    prefix:        String(body.prefix ?? "").trim(),
+    suffix:        String(body.suffix ?? "").trim(),
+    count:         Math.max(1, Math.min(1_000_000, Number(body.count) || 1)),
+    threads:       Math.max(1, Math.min(512, Number(body.threads) || cpuCount)),
+    bunOversubscribe: Math.max(0.1, Number(scaleRaw) || 1),
+    progressEvery: Math.max(64, Math.min(10_000_000, Number(body.progressEvery) || 512)),
+    uiRefreshMs:   Math.max(25, Math.min(60_000, Number(body.uiRefreshMs) || 100)),
+    maxWorkers:    Math.max(1, Math.min(1024, Number(body.maxWorkers) || 256)),
+    caseSensitive: Boolean(body.caseSensitive),
+    threshold:     Math.max(0, Math.min(100, Number(body.threshold) || 90)),
+    encrypt:       Boolean(body.encrypt),
+    decryptKey:    String(body.decryptKey ?? ""),
+    useWebgpu:     resolveWebGpuForHttp(Boolean(body.useWebgpu)),
+  };
 }
 
 // ── arg parser (zero deps) ────────────────────────────────────────────────────
@@ -160,6 +212,11 @@ SERVER ENDPOINTS
   GET  /system               Machine/runtime capabilities
   GET  /health              { ok, ts }
   GET  /results             last 200 hits from DB (JSON)
+  GET  /admin.html          Admin panel (jobs, monitor, login)
+  POST /admin/api/login     { password } → { token }
+  GET  /admin/api/jobs      Background jobs (Bearer admin token)
+  POST /admin/api/jobs      Start background job (Bearer)
+  GET  /admin/api/monitor   Resource monitor (Bearer)
   POST /grind               GrindOpts body → GrindResult[]
   OPTIONS *                  CORS preflight when ACCESS_CONTROL_ALLOW_ORIGIN is set
 
@@ -185,6 +242,7 @@ ENV (optional: add --allow-env to deno run if you want LOG_LEVEL / LOG_JSON from
   VANITY_HTTP_EPHEMERAL  1|true — HTTP server never persists hits to DB/KV (self-hosted prod)
   VANITY_HTTP_PERSIST_HITS  1|true — on Deno Deploy only: store hits in KV (default off on Deploy)
   VANITY_SSE_LOG_PULSE  1|true — on Deploy: also mirror http_grind_pulse lines into the SSE log ring (default: pulse skipped to save RAM/wire)
+  VANITY_ADMIN_PASSWORD     Admin page (/admin.html) password; enables unthrottled grinds + background jobs
 
 DECRYPT
   <runtime> decrypt.ts <cipherHex> <keyHex>
@@ -382,7 +440,7 @@ async function runServer() {
     const h = new Headers(res.headers);
     h.set("access-control-allow-origin", corsOrigin);
     h.set("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
-    h.set("access-control-allow-headers", "content-type, accept");
+    h.set("access-control-allow-headers", "content-type, accept, authorization");
     h.set("vary", "origin");
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
   };
@@ -475,44 +533,44 @@ async function runServer() {
           return done(Response.json({ error: "invalid JSON" }, { status: 400 }));
         }
 
-        const scaleRaw = (body as Record<string, unknown>).threadsMultiplier ?? body.bunOversubscribe;
-        const go: GrindOpts = {
-          prefix:        String(body.prefix ?? "").trim(),
-          suffix:        String(body.suffix ?? "").trim(),
-          count:         Math.max(1, Math.min(1_000_000, Number(body.count) || 1)),
-          threads:       Math.max(1, Math.min(512, Number(body.threads) || cpuCount)),
-          bunOversubscribe: Math.max(0.1, Number(scaleRaw) || 1),
-          progressEvery: Math.max(64, Math.min(10_000_000, Number(body.progressEvery) || 512)),
-          uiRefreshMs:   Math.max(25, Math.min(60_000, Number(body.uiRefreshMs) || 100)),
-          maxWorkers:    Math.max(1, Math.min(1024, Number(body.maxWorkers) || 256)),
-          caseSensitive: Boolean(body.caseSensitive),
-          threshold:     Math.max(0, Math.min(100, Number(body.threshold) || 90)),
-          encrypt:       Boolean(body.encrypt),
-          decryptKey:    String(body.decryptKey ?? ""),
-          useWebgpu:     resolveWebGpuForHttp(Boolean(body.useWebgpu)),
-        };
+        const go = parseHttpGrindBody(body);
+        const adminMode = isAdminRequest(req);
+        const unthrottled = adminMode && Boolean((body as Record<string, unknown>).unthrottled);
 
         if (!go.prefix && !go.suffix) {
           log.warn("http_grind_reject_empty_pattern", { origin: req.headers.get("origin") ?? null });
           return done(Response.json({ error: "prefix or suffix required" }, { status: 400 }));
         }
 
-        const capInfo = computeDeployWorkerCap();
-        const goForGrind: GrindOpts = {
-          ...go,
-          threads: Math.min(go.threads, capInfo.cap),
-          maxWorkers: Math.min(go.maxWorkers, capInfo.cap),
-        };
-        if (go.threads !== goForGrind.threads || go.maxWorkers !== goForGrind.maxWorkers) {
-          log.warn("http_grind_deploy_worker_cap", {
-            requestedThreads: go.threads,
-            requestedMaxWorkers: go.maxWorkers,
-            appliedCap: capInfo.cap,
-            capSource: capInfo.source,
-            rssMB: capInfo.rssMB != null ? Number(capInfo.rssMB.toFixed(2)) : undefined,
-            heapMB: capInfo.heapMB != null ? Number(capInfo.heapMB.toFixed(2)) : undefined,
+        let goForGrind: GrindOpts;
+        let capInfo = computeDeployWorkerCap();
+        if (adminMode && unthrottled) {
+          goForGrind = applyAdminOpts(go, true);
+          log.info("http_grind_admin_unthrottled", {
+            threads: goForGrind.threads,
+            maxWorkers: goForGrind.maxWorkers,
           });
+        } else if (adminMode) {
+          goForGrind = applyAdminOpts(go, false);
+        } else {
+          goForGrind = {
+            ...go,
+            threads: Math.min(go.threads, capInfo.cap),
+            maxWorkers: Math.min(go.maxWorkers, capInfo.cap),
+          };
+          if (go.threads !== goForGrind.threads || go.maxWorkers !== goForGrind.maxWorkers) {
+            log.warn("http_grind_deploy_worker_cap", {
+              requestedThreads: go.threads,
+              requestedMaxWorkers: go.maxWorkers,
+              appliedCap: capInfo.cap,
+              capSource: capInfo.source,
+              rssMB: capInfo.rssMB != null ? Number(capInfo.rssMB.toFixed(2)) : undefined,
+              heapMB: capInfo.heapMB != null ? Number(capInfo.heapMB.toFixed(2)) : undefined,
+            });
+          }
         }
+
+        const thresholdHits: ThresholdCapture[] = [];
 
         const rawHttpWorkers = RUNTIME === "bun"
           ? Math.max(1, Math.round(goForGrind.threads * goForGrind.bunOversubscribe))
@@ -590,14 +648,27 @@ async function runServer() {
           });
         };
 
+        const onThresholdHit = (msg: WorkerMsg & { type: "threshold" }) => {
+          const cap = captureThreshold(msg);
+          thresholdHits.push(cap);
+          log.info("http_threshold_hit", { score: cap.score, address: cap.address.slice(0, 10) + "…" });
+          sseSend("threshold", { ...msg, ...cap });
+          if (ndjsonWriter) {
+            void ndjsonWriter.write(
+              ndjsonEnc.encode(JSON.stringify({ type: "threshold", ...cap }) + "\n"),
+            ).catch(() => {});
+          }
+        };
+
         const runGrindWithHandlers = async () => {
           const run = () => grind(
             goForGrind,
             onHttpProgress,
-            (msg) => sseSend("threshold", { workerId: msg.workerId, score: msg.score, address: msg.address }),
+            onThresholdHit,
             (msg) => sseSend("bin", { workerId: msg.workerId, score: msg.score, address: msg.address }),
             req.signal,
           );
+          if (adminMode && unthrottled) return await run();
           return await runDeploySerialized(run);
         };
 
@@ -633,6 +704,7 @@ async function runServer() {
                   JSON.stringify({
                     type: "done",
                     hits: results,
+                    thresholdHits,
                     wallElapsedSec: Number((grindWallMs / 1000).toFixed(3)),
                   }) + "\n",
                 ),
@@ -681,7 +753,7 @@ async function runServer() {
           log.info("http_grind_ok", { hits: results.length, ms: Date.now() - t0 });
           sseSend("status", { message: "grind_complete", hits: results.length, ms: Date.now() - t0 });
           return done(
-            new Response(JSON.stringify(results), {
+            new Response(JSON.stringify({ hits: results, thresholdHits }), {
               headers: {
                 "content-type": "application/json; charset=utf-8",
                 "x-grind-wall-ms": String(grindWallMs),
@@ -698,6 +770,89 @@ async function runServer() {
           log.error("http_grind_failed", { prefix: goForGrind.prefix, ms: Date.now() - t0 }, err);
           sseSend("status", { message: "grind_failed", error: err.message });
           return done(Response.json({ error: err.message }, { status: 500 }));
+        }
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin.html")
+        return done(new Response(await getAdminPanelHtml(), { headers: { "content-type": "text/html; charset=utf-8" } }));
+
+      if (req.method === "POST" && url.pathname === "/admin/api/login") {
+        let pw = "";
+        try {
+          const j = await req.json() as { password?: string };
+          pw = String(j.password ?? "");
+        } catch { /* ignore */ }
+        if (!verifyAdminPassword(pw)) {
+          return done(Response.json({ error: "invalid password" }, { status: 401 }));
+        }
+        const sess = createAdminSession();
+        if (!sess) return done(Response.json({ error: "admin not configured" }, { status: 503 }));
+        return done(Response.json(sess));
+      }
+
+      if (req.method === "POST" && url.pathname === "/admin/api/logout") {
+        const tok = extractAdminToken(req);
+        if (tok) revokeAdminSession(tok);
+        return done(Response.json({ ok: true }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/admin/api/status") {
+        return done(Response.json({ configured: adminPasswordConfigured() }));
+      }
+
+      if (url.pathname.startsWith("/admin/api/")) {
+        if (!isAdminRequest(req)) {
+          return done(Response.json({ error: "unauthorized" }, { status: 401 }));
+        }
+
+        if (req.method === "GET" && url.pathname === "/admin/api/monitor") {
+          return done(Response.json(await getResourceMonitor()));
+        }
+
+        if (req.method === "GET" && url.pathname === "/admin/api/jobs") {
+          return done(Response.json(listJobs()));
+        }
+
+        const jobMatch = url.pathname.match(/^\/admin\/api\/jobs\/([^/]+)$/);
+        if (jobMatch) {
+          const jobId = jobMatch[1]!;
+          if (req.method === "GET") {
+            const job = getJob(jobId);
+            if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
+            return done(Response.json(job));
+          }
+          if (req.method === "DELETE") {
+            if (!cancelJob(jobId)) {
+              const job = getJob(jobId);
+              if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
+              return done(Response.json({ error: "not running" }, { status: 409 }));
+            }
+            return done(Response.json({ ok: true, id: jobId }));
+          }
+        }
+
+        if (req.method === "POST" && url.pathname === "/admin/api/jobs") {
+          let body: Partial<GrindOpts> & { unthrottled?: boolean };
+          try { body = await req.json(); }
+          catch { return done(Response.json({ error: "invalid JSON" }, { status: 400 })); }
+          const go = parseHttpGrindBody(body);
+          if (!go.prefix && !go.suffix) {
+            return done(Response.json({ error: "prefix or suffix required" }, { status: 400 }));
+          }
+          const unthrottled = Boolean(body.unthrottled);
+          const jobOrErr = startBackgroundJob(go, unthrottled, async (opts, hooks, signal) => {
+            return grind(
+              opts,
+              (p) => hooks.onProgress(p as Record<string, unknown>),
+              (m) => hooks.onThreshold(captureThreshold(m)),
+              undefined,
+              signal,
+            );
+          });
+          if ("error" in jobOrErr) {
+            return done(Response.json({ error: jobOrErr.error }, { status: 503 }));
+          }
+          return done(Response.json(jobOrErr, { status: 201 }));
         }
       }
 

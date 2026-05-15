@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/solden-mark.svg" type="image/svg+xml" />
+    <title>Solden · Admin</title>
+    <style>
+        :root { --ink:#0a0a0a; --paper:#fff; --muted:#64748b; --line:#e2e8f0; --accent:#2563eb; --err:#b42318; --ok:#0d7a3e; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family:system-ui,sans-serif; background:#0f172a; color:#e2e8f0; min-height:100vh; }
+        .wrap { max-width:1100px; margin:0 auto; padding:20px; }
+        header { display:flex; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+        header h1 { margin:0; font-size:1.35rem; color:#f8fafc; }
+        header a { color:#93c5fd; text-decoration:none; font-size:0.9rem; }
+        .card { background:#1e293b; border:1px solid #334155; border-radius:14px; padding:18px; margin-bottom:18px; }
+        .card h2 { margin:0 0 12px; font-size:1rem; color:#f1f5f9; }
+        label { display:block; font-size:0.8rem; color:#94a3b8; margin-bottom:4px; }
+        input, select { width:100%; padding:10px; border-radius:8px; border:1px solid #475569; background:#0f172a; color:#f8fafc; margin-bottom:10px; }
+        .row { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:10px; }
+        button { padding:10px 16px; border-radius:8px; border:none; font-weight:600; cursor:pointer; background:#2563eb; color:#fff; }
+        button.secondary { background:#334155; }
+        button.danger { background:#b42318; }
+        button:disabled { opacity:0.5; cursor:not-allowed; }
+        .mono { font-family:ui-monospace,Consolas,monospace; font-size:0.82rem; }
+        .monitor-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; }
+        .stat { background:#0f172a; padding:12px; border-radius:8px; border:1px solid #334155; }
+        .stat .k { font-size:0.72rem; color:#94a3b8; text-transform:uppercase; }
+        .stat .v { font-size:1.1rem; font-weight:700; color:#f8fafc; margin-top:4px; }
+        .job { border:1px solid #334155; border-radius:10px; padding:12px; margin-bottom:10px; background:#0f172a; }
+        .job h3 { margin:0 0 6px; font-size:0.95rem; color:#f8fafc; }
+        .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:0.7rem; font-weight:700; text-transform:uppercase; }
+        .badge.running { background:#1e3a5f; color:#93c5fd; }
+        .badge.done { background:#14532d; color:#86efac; }
+        .badge.failed, .badge.cancelled { background:#450a0a; color:#fca5a5; }
+        .hit-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:8px 0; border-top:1px solid #334155; font-size:0.82rem; }
+        #loginCard { max-width:360px; }
+        .hidden { display:none !important; }
+        .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <header>
+            <img src="/solden-mark.svg" width="48" height="48" alt="" />
+            <div>
+                <h1>Admin</h1>
+                <a href="/">← Back to search</a>
+            </div>
+            <button type="button" class="secondary hidden" id="logoutBtn" style="margin-left:auto">Sign out</button>
+        </header>
+
+        <div class="card" id="loginCard">
+            <h2>Sign in</h2>
+            <p style="color:#94a3b8;font-size:0.88rem;margin:0 0 12px">Password is set on the server (<code class="mono">VANITY_ADMIN_PASSWORD</code>).</p>
+            <label for="adminPw">Password</label>
+            <input id="adminPw" type="password" autocomplete="current-password" />
+            <button type="button" id="loginBtn">Sign in</button>
+            <p id="loginErr" class="hidden" style="color:#fca5a5;margin-top:10px"></p>
+        </div>
+
+        <div id="appPanel" class="hidden">
+            <div class="card">
+                <h2>Server resources</h2>
+                <div id="monitorGrid" class="monitor-grid">Loading…</div>
+                <p style="font-size:0.8rem;color:#64748b;margin:12px 0 0">Admin unthrottled mode targets ~90% of CPU threads and raises worker caps.</p>
+            </div>
+
+            <div class="card">
+                <h2>Background job</h2>
+                <p style="color:#94a3b8;font-size:0.88rem;margin:0 0 12px">Runs on the server after you leave this page.</p>
+                <div class="row">
+                    <div><label>Prefix</label><input id="jPrefix" value="meth" /></div>
+                    <div><label>Suffix</label><input id="jSuffix" value="" /></div>
+                    <div><label>Count</label><input id="jCount" type="number" min="1" value="1" /></div>
+                    <div><label>Threshold %</label><input id="jThreshold" type="number" min="0" max="100" value="90" /></div>
+                </div>
+                <label><input id="jUnthrottled" type="checkbox" checked /> Unthrottled (~90% CPU / max workers)</label>
+                <div class="actions">
+                    <button type="button" id="spawnJobBtn">Start background job</button>
+                    <button type="button" class="secondary" id="refreshJobsBtn">Refresh jobs</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Jobs</h2>
+                <div id="jobsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        const TOKEN_KEY = "vanity_admin_token";
+        function q(id) { return document.getElementById(id); }
+        function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
+        function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
+        function headers() {
+            const h = { "content-type": "application/json" };
+            const t = token();
+            if (t) h["authorization"] = "Bearer " + t;
+            return h;
+        }
+        async function api(path, opts) {
+            const r = await fetch(path, Object.assign({ headers: headers() }, opts || {}));
+            const text = await r.text();
+            let j = null;
+            try { j = JSON.parse(text); } catch { /* ignore */ }
+            if (r.status === 401) { setToken(""); showLogin(); throw new Error("unauthorized"); }
+            if (!r.ok) throw new Error((j && j.error) ? j.error : text.slice(0, 200));
+            return j;
+        }
+        function showLogin() {
+            q("loginCard").classList.remove("hidden");
+            q("appPanel").classList.add("hidden");
+            q("logoutBtn").classList.add("hidden");
+        }
+        function showApp() {
+            q("loginCard").classList.add("hidden");
+            q("appPanel").classList.remove("hidden");
+            q("logoutBtn").classList.remove("hidden");
+        }
+        async function loadMonitor() {
+            const m = await api("/admin/api/monitor");
+            const el = q("monitorGrid");
+            const rows = [
+                ["Runtime", m.runtime],
+                ["CPUs", m.cpuCount],
+                ["Admin thread cap", m.adminThreadsCap],
+                ["RAM total", m.memoryTotalMB != null ? m.memoryTotalMB + " MB" : "—"],
+                ["RAM free", m.memoryFreeMB != null ? m.memoryFreeMB + " MB" : "—"],
+                ["RAM used", m.memoryUsedMB != null ? m.memoryUsedMB + " MB" : "—"],
+                ["Process RSS", m.rssMB != null ? m.rssMB + " MB" : "—"],
+                ["Heap used", m.heapUsedMB != null ? m.heapUsedMB + " MB" : "—"],
+                ["Running jobs", m.runningJobs],
+                ["Threshold keys stored", m.thresholdHitsStored],
+            ];
+            el.innerHTML = rows.map(function(r) {
+                return '<div class="stat"><div class="k">' + r[0] + '</div><div class="v">' + r[1] + '</div></stat>';
+            }).join("");
+        }
+        function hitActions(h, idx) {
+            return '<button type="button" class="secondary" data-copy="' + idx + '">Copy</button>' +
+                '<button type="button" class="secondary" data-kp="' + idx + '">Keypair</button>';
+        }
+        function renderJob(job) {
+            const all = job.hits.concat(job.thresholdHits || []);
+            const hitsHtml = all.length ? all.map(function(h, i) {
+                return '<div class="hit-row"><span class="badge">' + h.score + '%</span> ' +
+                    '<span class="mono">' + h.address + '</span> ' + hitActions(h, job.id + "-" + i) + '</div>';
+            }).join("") : '<p style="color:#64748b">No keys yet.</p>';
+            const prog = job.progress || {};
+            return '<div class="job" data-job="' + job.id + '">' +
+                '<h3><span class="badge ' + job.status + '">' + job.status + '</span> ' + job.id + '</h3>' +
+                '<p class="mono" style="margin:0;color:#94a3b8">' + job.opts.prefix + ' / ' + (job.opts.suffix || "—") +
+                ' · ' + (prog.totalChecked || 0).toLocaleString() + ' keys · ' + (prog.aggregateKps || 0).toLocaleString() + ' k/s</p>' +
+                hitsHtml +
+                (job.status === "running" ? '<div class="actions"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel</button></div>' : "") +
+                '</div>';
+        }
+        async function loadJobs() {
+            const jobs = await api("/admin/api/jobs");
+            const el = q("jobsList");
+            if (!jobs.length) { el.innerHTML = '<p style="color:#64748b">No jobs yet.</p>'; return; }
+            el.innerHTML = jobs.map(renderJob).join("");
+            el.querySelectorAll("[data-copy]").forEach(function(btn) {
+                btn.onclick = function() {
+                    const id = btn.closest(".job").dataset.job;
+                    api("/admin/api/jobs/" + id).then(function(job) {
+                        const i = parseInt(btn.dataset.copy.split("-").pop(), 10);
+                        const all = job.hits.concat(job.thresholdHits || []);
+                        const h = all[i];
+                        if (h) navigator.clipboard.writeText(h.secretKey);
+                    });
+                };
+            });
+            el.querySelectorAll("[data-cancel]").forEach(function(btn) {
+                btn.onclick = function() {
+                    api("/admin/api/jobs/" + btn.dataset.cancel, { method: "DELETE" }).then(loadJobs);
+                };
+            });
+        }
+        q("loginBtn").onclick = async function() {
+            try {
+                const j = await fetch("/admin/api/login", {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ password: q("adminPw").value }),
+                }).then(function(r) { return r.json(); });
+                if (!j.token) throw new Error(j.error || "login failed");
+                setToken(j.token);
+                showApp();
+                await loadMonitor();
+                await loadJobs();
+            } catch (e) {
+                q("loginErr").textContent = e.message || "Login failed";
+                q("loginErr").classList.remove("hidden");
+            }
+        };
+        q("logoutBtn").onclick = function() {
+            api("/admin/api/logout", { method: "POST" }).catch(function() {});
+            setToken("");
+            showLogin();
+        };
+        q("spawnJobBtn").onclick = async function() {
+            await api("/admin/api/jobs", {
+                method: "POST",
+                body: JSON.stringify({
+                    prefix: q("jPrefix").value.trim(),
+                    suffix: q("jSuffix").value.trim(),
+                    count: parseInt(q("jCount").value, 10) || 1,
+                    threshold: parseInt(q("jThreshold").value, 10) || 90,
+                    unthrottled: q("jUnthrottled").checked,
+                    threads: 64,
+                    maxWorkers: 512,
+                }),
+            });
+            await loadJobs();
+        };
+        q("refreshJobsBtn").onclick = function() { loadJobs(); loadMonitor(); };
+        setInterval(function() {
+            if (token()) { loadJobs().catch(function() {}); loadMonitor().catch(function() {}); }
+        }, 5000);
+        if (token()) {
+            showApp();
+            loadMonitor().catch(showLogin);
+            loadJobs().catch(function() {});
+        } else {
+            fetch("/admin/api/status").then(function(r) { return r.json(); }).then(function(s) {
+                if (!s.configured) q("loginErr").textContent = "Admin password not configured on server.";
+                q("loginErr").classList.remove("hidden");
+            });
+        }
+    })();
+    </script>
+</body>
+</html>
