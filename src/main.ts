@@ -466,12 +466,33 @@ async function runServer() {
   console.log(`\x1b[32m🌐  http://0.0.0.0:${port}\x1b[0m\n`);
   log.info("server_listen", { port, dbPath, runtime: RUNTIME, httpEphemeralHits: httpUsesEphemeralHits() });
 
-  const corsOrigin = (env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim();
-  const applyCors = (res: Response): Response => {
-    if (!corsOrigin) return res;
+  const corsConfigured = Boolean((env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim());
+
+  /** Reflect request origin when allowed; always allow same-host (fixes local dev with production CORS env). */
+  const resolveCorsAllowOrigin = (req: Request): string | null => {
+    const raw = (env("ACCESS_CONTROL_ALLOW_ORIGIN") ?? "").trim();
+    if (!raw) return null;
+    const list = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    const origin = req.headers.get("origin");
+    try {
+      const reqOrigin = `${new URL(req.url).protocol}//${new URL(req.url).host}`;
+      if (origin && origin === reqOrigin) return origin;
+    } catch { /* ignore */ }
+    if (origin && (list.includes(origin) || list.includes("*"))) return origin;
+    if (origin && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+      if (env("VANITY_CORS_ALLOW_LOCALHOST") === "1" || list.some((o) => /localhost|127\.0\.0\.1/i.test(o))) {
+        return origin;
+      }
+    }
+    return null;
+  };
+
+  const applyCors = (req: Request, res: Response): Response => {
+    const allow = resolveCorsAllowOrigin(req);
+    if (!allow) return res;
     const h = new Headers(res.headers);
-    h.set("access-control-allow-origin", corsOrigin);
-    h.set("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+    h.set("access-control-allow-origin", allow);
+    h.set("access-control-allow-methods", "GET, HEAD, POST, DELETE, OPTIONS");
     h.set("access-control-allow-headers", "content-type, accept, authorization");
     h.set("vary", "origin");
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
@@ -483,14 +504,19 @@ async function runServer() {
     log.debug("http_request", { method: req.method, path: url.pathname });
 
     const done = (res: Response) => {
-      const out = applyCors(res);
+      const out = applyCors(req, res);
       log.info("http_response", { method: req.method, path: url.pathname, status: out.status, ms: Date.now() - t0 });
       return out;
     };
 
     try {
-      if (corsOrigin && req.method === "OPTIONS")
+      if (corsConfigured && req.method === "OPTIONS") {
+        const allow = resolveCorsAllowOrigin(req);
+        if (!allow) {
+          return new Response(JSON.stringify({ error: "CORS origin not allowed" }), { status: 403 });
+        }
         return done(new Response(null, { status: 204 }));
+      }
       if (req.method === "GET" && url.pathname === "/health")
         return done(Response.json({ ok: true, ts: Date.now(), runtime: RUNTIME }));
 
@@ -855,12 +881,17 @@ async function runServer() {
             return done(Response.json(job));
           }
           if (req.method === "DELETE") {
+            const job = getJob(jobId);
+            if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
             if (!cancelJob(jobId)) {
-              const job = getJob(jobId);
-              if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
-              return done(Response.json({ error: "not running" }, { status: 409 }));
+              return done(Response.json({
+                error: job.status === "running" || job.status === "queued"
+                  ? "cancel failed"
+                  : "job already finished",
+                status: job.status,
+              }, { status: 409 }));
             }
-            return done(Response.json({ ok: true, id: jobId }));
+            return done(Response.json({ ok: true, id: jobId, status: getJob(jobId)?.status ?? "cancelled" }));
           }
         }
 

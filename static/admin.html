@@ -262,6 +262,13 @@
             margin-bottom: 10px;
         }
         code { font-size: 0.8em; background: #0f172a; padding: 2px 6px; border-radius: 4px; }
+        #adminToast {
+            position: fixed; bottom: 20px; right: 20px; z-index: 100;
+            background: #1e293b; border: 1px solid #334155; color: #f8fafc;
+            padding: 10px 16px; border-radius: 8px; font-size: 0.88rem;
+            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+        }
+        #adminToast.show { opacity: 1; }
     </style>
 </head>
 <body>
@@ -378,10 +385,20 @@
         </div>
     </div>
 
+    <div id="adminToast" role="status"></div>
+
     <script>
     (function() {
         const TOKEN_KEY = "vanity_admin_token";
         function q(id) { return document.getElementById(id); }
+        function adminToast(msg) {
+            const el = q("adminToast");
+            if (!el) return;
+            el.textContent = msg;
+            el.classList.add("show");
+            clearTimeout(adminToast._t);
+            adminToast._t = setTimeout(function() { el.classList.remove("show"); }, 2800);
+        }
         function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
         function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
         function headers() {
@@ -391,7 +408,16 @@
             return h;
         }
         async function api(path, opts) {
-            const r = await fetch(path, Object.assign({ headers: headers() }, opts || {}));
+            let r;
+            try {
+                r = await fetch(path, Object.assign({ headers: headers() }, opts || {}));
+            } catch (e) {
+                const msg = e && e.message ? e.message : String(e);
+                if (/failed to fetch|network/i.test(msg)) {
+                    throw new Error("Cannot reach server. For local dev, comment out ACCESS_CONTROL_ALLOW_ORIGIN in .env or set VANITY_CORS_ALLOW_LOCALHOST=1");
+                }
+                throw e;
+            }
             const text = await r.text();
             let j = null;
             try { j = JSON.parse(text); } catch { /* ignore */ }
@@ -527,7 +553,9 @@
                 (prog.aggregateKps || 0).toLocaleString() + ' keys/s · best ' + (prog.bestScorePercent || 0) + '%' +
                 '</p>' +
                 hitsHtml +
-                (job.status === "running" ? '<div class="btn-row"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel</button></div>' : "") +
+                (job.status === "running" || job.status === "queued"
+                    ? '<div class="btn-row"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel job</button></div>'
+                    : "") +
                 '</div>';
         }
         function escapeHtml(s) {
@@ -551,8 +579,18 @@
                 };
             });
             el.querySelectorAll("[data-cancel]").forEach(function(btn) {
-                btn.onclick = function() {
-                    api("/admin/api/jobs/" + btn.dataset.cancel, { method: "DELETE" }).then(loadJobs);
+                btn.onclick = async function() {
+                    const id = btn.dataset.cancel;
+                    btn.disabled = true;
+                    try {
+                        await api("/admin/api/jobs/" + encodeURIComponent(id), { method: "DELETE" });
+                        adminToast("Job cancelled");
+                        await loadJobs();
+                        await loadMonitor();
+                    } catch (e) {
+                        adminToast(e.message || "Cancel failed");
+                        btn.disabled = false;
+                    }
                 };
             });
         }
@@ -581,12 +619,17 @@
         q("spawnJobBtn").onclick = async function() {
             const body = buildJobBody();
             if (!body.prefix && !body.suffix) {
-                alert("Prefix or suffix required");
+                adminToast("Prefix or suffix required");
                 return;
             }
-            await api("/admin/api/jobs", { method: "POST", body: JSON.stringify(body) });
-            await loadJobs();
-            await loadMonitor();
+            try {
+                const job = await api("/admin/api/jobs", { method: "POST", body: JSON.stringify(body) });
+                adminToast("Job started: " + (job && job.id ? job.id : "ok"));
+                await loadJobs();
+                await loadMonitor();
+            } catch (e) {
+                adminToast(e.message || "Failed to start job");
+            }
         };
         q("refreshJobsBtn").onclick = function() { loadJobs(); loadMonitor(); };
         q("jThreads").addEventListener("input", function() { q("jThreads").dataset.touched = "1"; });

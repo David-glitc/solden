@@ -1139,6 +1139,20 @@
                 if (errorBanner) errorBanner.hidden = true;
             }
 
+            function friendlyNetworkError(e) {
+                var msg = e && e.message ? String(e.message) : String(e);
+                if (e && (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"))) {
+                    return "cancelled";
+                }
+                if (/failed to fetch|networkerror|load failed|network error/i.test(msg)) {
+                    return "Could not reach the server. If you run locally, remove or fix ACCESS_CONTROL_ALLOW_ORIGIN in .env (it must match your page URL, or use same host). Keep the server running: deno task server";
+                }
+                if (/stream ended without/i.test(msg)) {
+                    return "Connection closed before the search finished (host timeout or server restart). Try again or use Admin background jobs.";
+                }
+                return msg;
+            }
+
             function setServerState(state, text) {
                 if (serverBar) serverBar.dataset.state = state;
                 if (serverBarText) serverBarText.textContent = text;
@@ -1400,7 +1414,15 @@
                 var dec = new TextDecoder();
                 var buf = "";
                 for (;;) {
-                    var result = await reader.read();
+                    var result;
+                    try {
+                        result = await reader.read();
+                    } catch (readErr) {
+                        return {
+                            kind: "error",
+                            message: friendlyNetworkError(readErr),
+                        };
+                    }
                     if (result.done) break;
                     buf += dec.decode(result.value, {
                         stream: true
@@ -1929,10 +1951,12 @@
                     renderHits(hitsArr);
                     toast("Done · " + hitsArr.length + " hit(s) · " + formatGrindClock(wallToastJson));
                 } catch (e) {
-                    if (e && (e.name === "AbortError" || (e instanceof DOMException && e.name === "AbortError"))) {
+                    var fe = friendlyNetworkError(e);
+                    if (fe === "cancelled") {
                         toast("Cancelled");
                     } else {
-                        showError((e && e.message ? e.message : "Something went wrong.") + " Check your connection and try again.");
+                        showError(fe);
+                        diagLine("grind exception: " + (e && e.message ? e.message : String(e)));
                     }
                 } finally {
                     clientGrindActive = false;

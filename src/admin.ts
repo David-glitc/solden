@@ -338,9 +338,24 @@ export function startBackgroundJob(
 }
 
 export function cancelJob(id: string): boolean {
+  const job = jobs.get(id);
+  if (!job) return false;
+  if (job.status === "done" || job.status === "failed" || job.status === "cancelled") return false;
+
   const ac = jobRunners.get(id);
+  if (job.status === "queued") {
+    job.status = "cancelled";
+    job.error = "cancelled";
+    job.finishedAt = Date.now();
+    if (ac) ac.abort();
+    jobRunners.delete(id);
+    log.info("admin_job_cancelled_queued", { id });
+    return true;
+  }
+
   if (!ac) return false;
   ac.abort();
+  log.info("admin_job_cancel_requested", { id });
   return true;
 }
 
