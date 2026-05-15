@@ -359,6 +359,103 @@ export function cancelJob(id: string): boolean {
   return true;
 }
 
+/** Remove job from memory; cancels if still active. */
+export function deleteJob(id: string): boolean {
+  const job = jobs.get(id);
+  if (!job) return false;
+  if (job.status === "running" || job.status === "queued") cancelJob(id);
+  jobs.delete(id);
+  jobRunners.delete(id);
+  log.info("admin_job_deleted", { id, status: job.status });
+  return true;
+}
+
+export function deleteFinishedJobs(): number {
+  let n = 0;
+  for (const [id, j] of jobs) {
+    if (j.status !== "running" && j.status !== "queued") {
+      jobs.delete(id);
+      n++;
+    }
+  }
+  if (n) log.info("admin_jobs_cleared_finished", { count: n });
+  return n;
+}
+
+export type MemoryCleanupResult = {
+  removedJobs: number;
+  prunedOld: number;
+  gcAttempted: boolean;
+  rssMBBefore: number | null;
+  rssMBAfter: number | null;
+};
+
+function readRssMB(): number | null {
+  try {
+    const mu = (globalThis as any).Deno?.memoryUsage?.();
+    if (mu?.rss) return Number((mu.rss / (1024 * 1024)).toFixed(2));
+  } catch { /* ignore */ }
+  try {
+    const mu = (process as any).memoryUsage?.();
+    if (mu?.rss) return Number((mu.rss / (1024 * 1024)).toFixed(2));
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Drop finished jobs and nudge GC (best-effort; isolate RSS may not drop on Deploy). */
+export async function adminMemoryCleanup(): Promise<MemoryCleanupResult> {
+  const rssMBBefore = readRssMB();
+  const removedJobs = deleteFinishedJobs();
+  const prunedOld = pruneOldJobs(0);
+  let gcAttempted = false;
+  try {
+    const g = (globalThis as any).gc;
+    if (typeof g === "function") {
+      g();
+      gcAttempted = true;
+    }
+  } catch { /* ignore */ }
+  try {
+    const Bun = (globalThis as any).Bun;
+    if (Bun?.gc) {
+      Bun.gc(true);
+      gcAttempted = true;
+    }
+  } catch { /* ignore */ }
+  await new Promise((r) => setTimeout(r, 50));
+  return {
+    removedJobs,
+    prunedOld,
+    gcAttempted,
+    rssMBBefore,
+    rssMBAfter: readRssMB(),
+  };
+}
+
+export function adminRestartAllowed(): boolean {
+  return env("VANITY_ADMIN_ALLOW_RESTART") === "1";
+}
+
+/** Exit process so the host / platform restarts the worker (requires env flag). */
+export function adminRequestRestart(): { ok: boolean; message: string } {
+  if (!adminRestartAllowed()) {
+    return {
+      ok: false,
+      message: "Set VANITY_ADMIN_ALLOW_RESTART=1 on the server to enable restart",
+    };
+  }
+  log.warn("admin_restart_requested");
+  setTimeout(() => {
+    if (typeof (globalThis as any).Deno !== "undefined") {
+      try { (globalThis as any).Deno.exit(0); } catch { /* ignore */ }
+    }
+    if (typeof process !== "undefined") {
+      try { (process as any).exit?.(0); } catch { /* ignore */ }
+    }
+  }, 400);
+  return { ok: true, message: "Process exiting — platform should start a fresh worker" };
+}
+
 /** Prune finished jobs older than maxAgeMs (default 24h). */
 export function pruneOldJobs(maxAgeMs = 24 * 60 * 60 * 1000): number {
   const cutoff = Date.now() - maxAgeMs;

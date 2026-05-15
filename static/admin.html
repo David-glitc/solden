@@ -241,8 +241,19 @@
         }
         .badge.running { background: #1e3a5f; color: #93c5fd; }
         .badge.done { background: #14532d; color: #86efac; }
-        .badge.failed, .badge.cancelled, .badge.queued { background: #450a0a; color: #fca5a5; }
+        .badge.failed { background: #450a0a; color: #fca5a5; }
+        .badge.cancelled { background: #3f3f46; color: #d4d4d8; }
         .badge.queued { background: #422006; color: #fcd34d; }
+        .live-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--ok);
+            margin-right: 6px;
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
         .job-meta { font-size: 0.8rem; color: var(--muted); margin: 0 0 8px; }
         .hit-row {
             display: grid;
@@ -313,6 +324,12 @@
                         <div class="ram-bar"><div class="ram-bar-fill" id="ramBarFill" style="width:0%"></div></div>
                     </div>
                     <div class="stat-grid" id="monitorGrid"></div>
+                    <p class="field-label" style="margin:16px 0 8px">System maintenance</p>
+                    <div class="btn-row" style="margin-top:0">
+                        <button type="button" class="secondary" id="clearMemBtn" title="Remove finished jobs and run GC if available">Clear memory</button>
+                        <button type="button" class="danger" id="restartBtn" title="Requires VANITY_ADMIN_ALLOW_RESTART=1">Restart process</button>
+                    </div>
+                    <p class="lead" id="restartHint" style="margin:8px 0 0;font-size:0.75rem"></p>
                 </div>
 
                 <div class="card">
@@ -378,8 +395,11 @@
             </div>
 
             <div class="card">
-                <h2>Jobs</h2>
-                <p class="lead">Auto-refreshes every 5s</p>
+                <h2>Jobs <span id="jobsLiveLabel" class="hidden"><span class="live-dot"></span>live</span></h2>
+                <p class="lead" id="jobsRefreshHint">Updates every 1s while jobs run</p>
+                <div class="btn-row" style="margin-top:0;margin-bottom:12px">
+                    <button type="button" class="secondary" id="clearFinishedBtn">Clear finished jobs</button>
+                </div>
                 <div id="jobsList"></div>
             </div>
         </div>
@@ -493,7 +513,9 @@
                 ["Threshold keys", m.thresholdHitsStored],
             ];
             q("cpuGrid").innerHTML = cpuStats.map(function(r) { return statCell(r[0], r[1]); }).join("");
-            if (m.cpuCount) {
+            const rh = q("restartHint");
+            if (rh) rh.textContent = "Clear memory drops finished jobs from RAM. Restart needs VANITY_ADMIN_ALLOW_RESTART=1 (Fly/Docker/PM2 will respawn).";
+                        if (m.cpuCount) {
                 q("hintExtreme").textContent = "All " + m.cpuCount + " cores (" + m.cpuCount + " workers, no oversubscribe)";
                 q("hintUnthrottled").textContent = "~90% CPU (" + (m.adminUnthrottledThreads || "?") + " threads), raised max workers";
                 const threadsEl = q("jThreads");
@@ -553,25 +575,36 @@
                 (prog.aggregateKps || 0).toLocaleString() + ' keys/s · best ' + (prog.bestScorePercent || 0) + '%' +
                 '</p>' +
                 hitsHtml +
+                (job.error && job.status !== "running" ? '<p class="job-meta" style="color:#fca5a5">' + escapeHtml(job.error) + '</p>' : "") +
+                '<div class="btn-row">' +
                 (job.status === "running" || job.status === "queued"
-                    ? '<div class="btn-row"><button type="button" class="danger" data-cancel="' + job.id + '">Cancel job</button></div>'
+                    ? '<button type="button" class="danger" data-cancel="' + job.id + '">Cancel</button>'
                     : "") +
+                '<button type="button" class="secondary" data-delete="' + job.id + '">Delete</button>' +
+                '</div>' +
                 '</div>';
         }
         function escapeHtml(s) {
             return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
-        async function loadJobs() {
-            const jobs = await api("/admin/api/jobs");
-            const el = q("jobsList");
-            if (!jobs.length) { el.innerHTML = '<p style="color:#64748b">No jobs yet.</p>'; return; }
-            el.innerHTML = jobs.map(renderJob).join("");
+        function jobSnapshot(jobs) {
+            return jobs.map(function(j) {
+                const p = j.progress || {};
+                return j.id + ":" + j.status + ":" + (p.totalChecked || 0) + ":" + (p.aggregateKps || 0) +
+                    ":" + (j.hits ? j.hits.length : 0) + ":" + (j.thresholdHits ? j.thresholdHits.length : 0);
+            }).join("|");
+        }
+        function hasActiveJobs(jobs) {
+            return jobs.some(function(j) { return j.status === "running" || j.status === "queued"; });
+        }
+        let lastJobsSnap = "";
+        function bindJobActions(el) {
             el.querySelectorAll("[data-copy]").forEach(function(btn) {
                 btn.onclick = function() {
                     const parts = btn.dataset.copy.split("-");
                     const jobId = parts.slice(0, -1).join("-");
                     const i = parseInt(parts[parts.length - 1], 10);
-                    api("/admin/api/jobs/" + jobId).then(function(job) {
+                    api("/admin/api/jobs/" + encodeURIComponent(jobId)).then(function(job) {
                         const all = job.hits.concat(job.thresholdHits || []);
                         const h = all[i];
                         if (h) navigator.clipboard.writeText(h.secretKey);
@@ -583,8 +616,9 @@
                     const id = btn.dataset.cancel;
                     btn.disabled = true;
                     try {
-                        await api("/admin/api/jobs/" + encodeURIComponent(id), { method: "DELETE" });
+                        await api("/admin/api/jobs/" + encodeURIComponent(id) + "?cancel=1", { method: "DELETE" });
                         adminToast("Job cancelled");
+                        lastJobsSnap = "";
                         await loadJobs();
                         await loadMonitor();
                     } catch (e) {
@@ -593,7 +627,81 @@
                     }
                 };
             });
+            el.querySelectorAll("[data-delete]").forEach(function(btn) {
+                btn.onclick = async function() {
+                    const id = btn.dataset.delete;
+                    if (!confirm("Delete job " + id + "?")) return;
+                    btn.disabled = true;
+                    try {
+                        await api("/admin/api/jobs/" + encodeURIComponent(id), { method: "DELETE" });
+                        adminToast("Job deleted");
+                        lastJobsSnap = "";
+                        await loadJobs();
+                        await loadMonitor();
+                    } catch (e) {
+                        adminToast(e.message || "Delete failed");
+                        btn.disabled = false;
+                    }
+                };
+            });
         }
+        async function loadJobs() {
+            const jobs = await api("/admin/api/jobs");
+            const el = q("jobsList");
+            const snap = jobSnapshot(jobs);
+            const active = hasActiveJobs(jobs);
+            const live = q("jobsLiveLabel");
+            const hint = q("jobsRefreshHint");
+            if (live) live.classList.toggle("hidden", !active);
+            if (hint) hint.textContent = active ? "Live · updates every 0.8s" : "Updates every 2s";
+            if (!jobs.length) {
+                el.innerHTML = '<p style="color:#64748b">No jobs yet.</p>';
+                lastJobsSnap = "";
+                return;
+            }
+            if (snap !== lastJobsSnap) {
+                el.innerHTML = jobs.map(renderJob).join("");
+                bindJobActions(el);
+                lastJobsSnap = snap;
+            }
+        }
+        let refreshTimer = null;
+        let refreshActive = false;
+        let pollFastJobs = false;
+        async function refreshAll() {
+            if (!token() || refreshActive) return;
+            refreshActive = true;
+            try {
+                const jobs = await api("/admin/api/jobs");
+                await loadMonitor();
+                const snap = jobSnapshot(jobs);
+                const active = hasActiveJobs(jobs);
+                pollFastJobs = active;
+                const el = q("jobsList");
+                const live = q("jobsLiveLabel");
+                const hint = q("jobsRefreshHint");
+                if (live) live.classList.toggle("hidden", !active);
+                if (hint) hint.textContent = active ? "Live · updates every 0.8s" : "Updates every 2s";
+                if (!jobs.length) {
+                    el.innerHTML = '<p style="color:#64748b">No jobs yet.</p>';
+                    lastJobsSnap = "";
+                } else if (snap !== lastJobsSnap) {
+                    el.innerHTML = jobs.map(renderJob).join("");
+                    bindJobActions(el);
+                    lastJobsSnap = snap;
+                }
+            } catch (_) { /* ignore poll errors */ }
+            finally { refreshActive = false; scheduleRefresh(); }
+        }
+        function scheduleRefresh() {
+            if (refreshTimer) clearTimeout(refreshTimer);
+            if (!token()) return;
+            const ms = document.hidden ? 5000 : (pollFastJobs ? 800 : 2000);
+            refreshTimer = setTimeout(refreshAll, ms);
+        }
+        document.addEventListener("visibilitychange", function() {
+            if (!document.hidden && token()) refreshAll();
+        });
         q("loginBtn").onclick = async function() {
             try {
                 const j = await fetch("/admin/api/login", {
@@ -633,9 +741,25 @@
         };
         q("refreshJobsBtn").onclick = function() { loadJobs(); loadMonitor(); };
         q("jThreads").addEventListener("input", function() { q("jThreads").dataset.touched = "1"; });
-        setInterval(function() {
-            if (token()) { loadJobs().catch(function() {}); loadMonitor().catch(function() {}); }
-        }, 5000);
+        q("clearMemBtn").onclick = async function() {
+            try {
+                const r = await api("/admin/api/system/cleanup", { method: "POST" });
+                lastJobsSnap = "";
+                adminToast("Cleared " + (r.removedJobs || 0) + " jobs" + (r.gcAttempted ? " · GC ran" : ""));
+                await loadJobs();
+                await loadMonitor();
+            } catch (e) { adminToast(e.message || "Cleanup failed"); }
+        };
+        q("clearFinishedBtn").onclick = function() { q("clearMemBtn").click(); };
+        q("restartBtn").onclick = async function() {
+            if (!confirm("Restart the server process? Active grinds will stop.")) return;
+            try {
+                const r = await api("/admin/api/system/restart", { method: "POST" });
+                adminToast(r.message || "Restarting…");
+                setTimeout(function() { location.reload(); }, 2000);
+            } catch (e) { adminToast(e.message || "Restart not allowed"); }
+        };
+        scheduleRefresh();
         if (token()) {
             showApp();
             loadMonitor().catch(showLogin);

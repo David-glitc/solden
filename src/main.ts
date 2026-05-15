@@ -15,8 +15,12 @@ import {
   adminPasswordConfigured,
   applyAdminOpts,
   resolveAdminPerfMode,
+  adminMemoryCleanup,
+  adminRequestRestart,
+  adminRestartAllowed,
   cancelJob,
   createAdminSession,
+  deleteJob,
   extractAdminToken,
   getJob,
   getResourceMonitor,
@@ -883,16 +887,38 @@ async function runServer() {
           if (req.method === "DELETE") {
             const job = getJob(jobId);
             if (!job) return done(Response.json({ error: "not found" }, { status: 404 }));
-            if (!cancelJob(jobId)) {
-              return done(Response.json({
-                error: job.status === "running" || job.status === "queued"
-                  ? "cancel failed"
-                  : "job already finished",
-                status: job.status,
-              }, { status: 409 }));
+            const cancelOnly = url.searchParams.get("cancel") === "1";
+            if (cancelOnly) {
+              if (!cancelJob(jobId)) {
+                return done(Response.json({
+                  error: "cannot cancel",
+                  status: job.status,
+                }, { status: 409 }));
+              }
+              return done(Response.json({ ok: true, id: jobId, status: getJob(jobId)?.status ?? "cancelled" }));
             }
-            return done(Response.json({ ok: true, id: jobId, status: getJob(jobId)?.status ?? "cancelled" }));
+            if (!deleteJob(jobId)) {
+              return done(Response.json({ error: "delete failed" }, { status: 409 }));
+            }
+            return done(Response.json({ ok: true, id: jobId, deleted: true }));
           }
+        }
+
+        if (req.method === "POST" && url.pathname === "/admin/api/system/cleanup") {
+          return done(Response.json(await adminMemoryCleanup()));
+        }
+
+        if (req.method === "POST" && url.pathname === "/admin/api/system/restart") {
+          const restartAllowed = adminRestartAllowed();
+          if (!restartAllowed) {
+            return done(Response.json({
+              ok: false,
+              allowed: false,
+              message: "Set VANITY_ADMIN_ALLOW_RESTART=1 on the server to enable restart",
+            }, { status: 403 }));
+          }
+          const result = adminRequestRestart();
+          return done(Response.json({ ...result, allowed: true }));
         }
 
         if (req.method === "POST" && url.pathname === "/admin/api/jobs") {

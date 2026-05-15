@@ -138,6 +138,11 @@
 - **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
 - **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
 
+## 2026-05-15 — Admin: delete jobs, live refresh, memory cleanup, restart
+- **`src/admin.ts`:** `deleteJob`, `deleteFinishedJobs`, `adminMemoryCleanup` (GC + drop finished jobs), `adminRequestRestart` (env-gated).
+- **`src/main.ts`:** `DELETE /admin/api/jobs/:id` removes job (`?cancel=1` to cancel only); `POST /admin/api/system/cleanup`, `POST /admin/api/system/restart`.
+- **`static/admin.html`:** Delete per job; Cancel vs Delete; 0.8s poll while jobs run; Clear memory + Restart process buttons.
+
 ## 2026-05-15 — Worker hot-path acceleration (sync loop, scratch buffers)
 - **`src/worker.ts`:** Node path uses sync `runLoop()` (no `await` per key); `generateKeyPairSync` with DER encoding options; reused `scratchPub`/`scratchSecret` + `b58_32` digit buffer; precomputed `pfxC`/`sfxC`; `publicKey` reuses `address` string; `detailProgress` off when `progressEvery >= 4096`; `needScore` off when `threshold === 100`.
 
