@@ -92,6 +92,29 @@ export type ThresholdCapture = {
   foundAt: number;
 };
 
+export type AdminJobProgress = {
+  totalChecked: number;
+  aggregateKps: number;
+  bestScorePercent: number;
+  wallElapsedSec: number;
+  bestAddress?: string;
+  bestAccuracyPercent?: number;
+  bestMatchedTargetChars?: number;
+  bestTargetLen?: number;
+  bestPrefixWindow?: string;
+  bestSuffixWindow?: string;
+  firstMismatchIndex?: number;
+  lastMismatchIndex?: number;
+  matchedPrefixChars?: number;
+  matchedSuffixChars?: number;
+  accuracyPercent?: number;
+  runningAvgAccuracyPercent?: number;
+  keygenBackend?: string;
+  effectiveWorkers?: number;
+  reportingWorkers?: number;
+  avgKpsWall?: number;
+};
+
 export type AdminJob = {
   id: string;
   status: AdminJobStatus;
@@ -105,10 +128,9 @@ export type AdminJob = {
   hits: GrindResult[];
   thresholdHits: ThresholdCapture[];
   error: string | null;
-  progress: {
-    totalChecked: number;
-    aggregateKps: number;
-    bestScorePercent: number;
-    wallElapsedSec: number;
-  };
+  progress: AdminJobProgress;
+  /** Last time progress was written (for reload / cross-isolate). */
+  progressUpdatedAt?: number;
+  /** Running in KV but no worker on this isolate (reload / Deploy). */
+  detached?: boolean;
 };

@@ -59,6 +59,13 @@
     .job { border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 10px; background: var(--card2); }
     .job-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
     .job-head .id { flex: 1; min-width: 140px; }
+    .profile { margin: 10px 0; padding: 12px; background: #0b1220; border: 1px solid var(--line); border-radius: 8px; }
+    .profile h4 { margin: 0 0 10px; font-size: 0.8rem; color: #93c5fd; text-transform: uppercase; letter-spacing: 0.04em; }
+    .profile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+    .profile .big-score { font-size: 1.6rem; font-weight: 800; color: #f8fafc; line-height: 1.1; }
+    .profile .addr-head { font-size: 1rem; color: #e2e8f0; margin: 4px 0 8px; }
+    .profile .full-addr { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+    .detached-note { background: #422006; color: #fcd34d; padding: 8px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 8px; }
     .keys-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
     .keys-table th, .keys-table td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); }
     .keys-table th { color: var(--muted); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; }
@@ -99,8 +106,10 @@
           <div class="chart-box"><canvas id="kpsChart"></canvas></div>
         </section>
         <section class="card">
-          <h2>System</h2>
-          <div class="grid-stats" id="monitorGrid"></div>
+          <h2>Memory</h2>
+          <p class="muted">Live used RAM, RSS & heap (MB)</p>
+          <div class="chart-box"><canvas id="memChart"></canvas></div>
+          <div class="grid-stats" id="monitorGrid" style="margin-top:12px"></div>
           <div class="ram-bar"><div class="ram-fill" id="ramFill" style="width:0%"></div></div>
           <div class="row" style="margin-top:12px">
             <button type="button" class="secondary" id="clearMemBtn">Clear finished</button>
@@ -171,8 +180,21 @@
     let authFailCount = 0;
     let lastStreamTs = 0;
     let kpsChart = null;
+    let memChart = null;
     const kpsHistory = [];
+    const memHistory = [];
     const MAX_CHART_POINTS = 60;
+
+    const chartBaseOptions = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      scales: {
+        x: { ticks: { color: "#94a3b8", maxTicksLimit: 8 }, grid: { color: "#334155" } },
+        y: { ticks: { color: "#94a3b8" }, grid: { color: "#334155" }, beginAtZero: true },
+      },
+      plugins: { legend: { labels: { color: "#e2e8f0" } } },
+    };
 
     function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
     function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
@@ -265,37 +287,83 @@
       q("logoutBtn").classList.remove("hidden");
     }
 
-    function initChart() {
-      if (kpsChart || typeof Chart === "undefined") return;
-      const ctx = q("kpsChart").getContext("2d");
-      kpsChart = new Chart(ctx, {
-        type: "line",
-        data: {
-          labels: [],
-          datasets: [{
-            label: "Keys/s",
-            data: [],
-            borderColor: "#3b82f6",
-            backgroundColor: "rgba(59,130,246,0.15)",
-            fill: true,
-            tension: 0.25,
-            pointRadius: 0,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          animation: false,
-          scales: {
-            x: { ticks: { color: "#94a3b8", maxTicksLimit: 8 }, grid: { color: "#334155" } },
-            y: { ticks: { color: "#94a3b8" }, grid: { color: "#334155" }, beginAtZero: true },
+    function initCharts() {
+      if (typeof Chart === "undefined") return;
+      if (!kpsChart && q("kpsChart")) {
+        kpsChart = new Chart(q("kpsChart").getContext("2d"), {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [{
+              label: "Keys/s",
+              data: [],
+              borderColor: "#3b82f6",
+              backgroundColor: "rgba(59,130,246,0.15)",
+              fill: true,
+              tension: 0.25,
+              pointRadius: 0,
+            }],
           },
-          plugins: { legend: { labels: { color: "#e2e8f0" } } },
-        },
-      });
+          options: chartBaseOptions,
+        });
+      }
+      if (!memChart && q("memChart")) {
+        memChart = new Chart(q("memChart").getContext("2d"), {
+          type: "line",
+          data: {
+            labels: [],
+            datasets: [
+              {
+                label: "Used RAM (MB)",
+                data: [],
+                borderColor: "#22c55e",
+                backgroundColor: "rgba(34,197,94,0.1)",
+                fill: false,
+                tension: 0.25,
+                pointRadius: 0,
+                spanGaps: true,
+              },
+              {
+                label: "Process RSS (MB)",
+                data: [],
+                borderColor: "#f59e0b",
+                backgroundColor: "rgba(245,158,11,0.08)",
+                fill: false,
+                tension: 0.25,
+                pointRadius: 0,
+                spanGaps: true,
+              },
+              {
+                label: "Heap used (MB)",
+                data: [],
+                borderColor: "#a78bfa",
+                backgroundColor: "rgba(167,139,250,0.08)",
+                fill: false,
+                tension: 0.25,
+                pointRadius: 0,
+                spanGaps: true,
+              },
+            ],
+          },
+          options: {
+            ...chartBaseOptions,
+            plugins: {
+              legend: { labels: { color: "#e2e8f0", boxWidth: 12 } },
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) {
+                    const v = ctx.parsed.y;
+                    return ctx.dataset.label + ": " + (v != null ? v + " MB" : "n/a");
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
     }
 
-    function pushChartPoint(kps) {
+    function pushKpsChartPoint(kps) {
       if (!kpsChart) return;
       const label = new Date().toLocaleTimeString();
       kpsHistory.push({ label, kps });
@@ -305,8 +373,26 @@
       kpsChart.update("none");
     }
 
+    function pushMemChartPoint(m) {
+      if (!memChart || !m) return;
+      const label = new Date().toLocaleTimeString();
+      memHistory.push({
+        label,
+        used: m.memoryUsedMB != null ? m.memoryUsedMB : null,
+        rss: m.rssMB != null ? m.rssMB : null,
+        heap: m.heapUsedMB != null ? m.heapUsedMB : null,
+      });
+      if (memHistory.length > MAX_CHART_POINTS) memHistory.shift();
+      memChart.data.labels = memHistory.map((p) => p.label);
+      memChart.data.datasets[0].data = memHistory.map((p) => p.used);
+      memChart.data.datasets[1].data = memHistory.map((p) => p.rss);
+      memChart.data.datasets[2].data = memHistory.map((p) => p.heap);
+      memChart.update("none");
+    }
+
     function renderMonitor(m) {
       if (!m) return;
+      pushMemChartPoint(m);
       const pct = m.memoryFreePercent;
       const rows = [
         ["Free RAM", m.memoryFreeMB != null ? m.memoryFreeMB + " MB" : "—"],
@@ -324,6 +410,48 @@
         fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
         fill.className = "ram-fill" + (pct < 15 ? " crit" : pct < 30 ? " warn" : "");
       }
+    }
+
+    function addrHead(addr) {
+      if (!addr) return "—";
+      if (addr.length <= 16) return addr;
+      return addr.slice(0, 8) + "…" + addr.slice(-8);
+    }
+
+    function runProfileHtml(job) {
+      const p = job.progress || {};
+      const addr = p.bestAddress || "";
+      const score = p.bestScorePercent || 0;
+      const acc = p.bestAccuracyPercent || p.accuracyPercent || 0;
+      const matched = p.bestMatchedTargetChars || 0;
+      const target = p.bestTargetLen || 0;
+      const pfx = p.bestPrefixWindow || "—";
+      const sfx = p.bestSuffixWindow || "—";
+      const mis = (p.firstMismatchIndex >= 0 && p.lastMismatchIndex >= 0)
+        ? p.firstMismatchIndex + " … " + p.lastMismatchIndex : "—";
+      const detached = job.detached && (job.status === "running" || job.status === "queued");
+      const saved = job.progressUpdatedAt ? "Saved " + fmtTime(job.progressUpdatedAt) : "";
+      let html = "";
+      if (detached) {
+        html += '<div class="detached-note">Showing last saved progress' +
+          (saved ? " · " + saved : "") +
+          ". Grind may still be running on the server — live updates resume when this tab stays connected.</div>";
+      }
+      html += '<div class="profile"><h4>Run profile</h4>' +
+        '<div class="big-score">' + score.toFixed(1) + '% match</div>' +
+        '<div class="addr-head">' + esc(addrHead(addr)) + '</div>' +
+        (addr ? '<div class="full-addr mono">' + esc(addr) + '</div>' : '') +
+        '<div class="profile-grid" style="margin-top:10px">' +
+        '<div class="stat"><div class="k">Accuracy</div><div class="v">' + acc.toFixed(1) + '%</div></div>' +
+        '<div class="stat"><div class="k">Matched chars</div><div class="v">' + matched + ' / ' + target + '</div></div>' +
+        '<div class="stat"><div class="k">Prefix window</div><div class="v mono">' + esc(pfx) + '</div></div>' +
+        '<div class="stat"><div class="k">Suffix window</div><div class="v mono">' + esc(sfx) + '</div></div>' +
+        '<div class="stat"><div class="k">Mismatch idx</div><div class="v">' + mis + '</div></div>' +
+        '<div class="stat"><div class="k">Keygen</div><div class="v">' + esc(p.keygenBackend || "—") + '</div></div>' +
+        '<div class="stat"><div class="k">Workers</div><div class="v">' + (p.reportingWorkers||0) + ' / ' + (p.effectiveWorkers||"—") + '</div></div>' +
+        '<div class="stat"><div class="k">Wall avg</div><div class="v">' + (p.avgKpsWall ? Math.round(p.avgKpsWall).toLocaleString() + "/s" : "—") + '</div></div>' +
+        '</div></div>';
+      return html;
     }
 
     function keysTable(title, rows, jobId, kind) {
@@ -379,14 +507,15 @@
           '<div class="row" style="margin:6px 0">' +
           '<span class="stat" style="flex:1"><span class="k">Keys checked</span><span class="v">' + (p.totalChecked||0).toLocaleString() + '</span></span>' +
           '<span class="stat" style="flex:1"><span class="k">Speed</span><span class="v">' + (p.aggregateKps||0).toLocaleString() + ' /s</span></span>' +
-          '<span class="stat" style="flex:1"><span class="k">Best match</span><span class="v">' + (p.bestScorePercent||0) + '%</span></span>' +
+          '<span class="stat" style="flex:1"><span class="k">Elapsed</span><span class="v">' + formatClock(runMs) + '</span></span>' +
           '</div>' +
+          runProfileHtml(job) +
           keysTable("Threshold captures (≥ " + thr + "%)", thrHits, job.id, "thr") +
           keysTable("Final hits", hits, job.id, "hit") +
           (job.error ? '<p class="err">' + esc(job.error) + '</p>' : '') +
           '<div class="row" style="margin-top:8px">' + actions + '</div></div>';
       }).join("");
-      pushChartPoint(totalKps);
+      pushKpsChartPoint(totalKps);
 
       el.querySelectorAll("[data-copy]").forEach(function(btn) {
         btn.onclick = function() {
@@ -504,7 +633,7 @@
         setToken(j.token);
         authFailCount = 0;
         showApp();
-        initChart();
+        initCharts();
         startStream();
         toast("Signed in");
       } catch (e) {
@@ -553,8 +682,11 @@
 
     if (token()) {
       showApp();
-      initChart();
-      api("/admin/api/monitor").then(function() { startStream(); }).catch(function(e) {
+      initCharts();
+      api("/admin/api/monitor").then(function(m) {
+        renderMonitor(m);
+        startStream();
+      }).catch(function(e) {
         toast(e.message);
         if (/expired|unauthorized/i.test(e.message)) showLogin();
         else startStream();

@@ -62,16 +62,59 @@ async function ensureJobsHydrated(): Promise<void> {
   storeLoaded = true;
 }
 
+const RECENT_PROGRESS_MS = 15 * 60 * 1000;
+const STALE_JOB_MS = 6 * 60 * 60 * 1000;
+
 function reconcileStoredJob(job: AdminJob): AdminJob {
-  if ((job.status === "running" || job.status === "queued") && !jobRunners.has(job.id)) {
+  if ((job.status !== "running" && job.status !== "queued") || jobRunners.has(job.id)) {
+    return { ...job, detached: false };
+  }
+  const last = job.progressUpdatedAt ?? job.startedAt ?? job.createdAt;
+  const age = Date.now() - last;
+  if (age < RECENT_PROGRESS_MS) {
+    return { ...job, detached: true, error: null };
+  }
+  if (age < STALE_JOB_MS) {
     return {
       ...job,
-      status: "failed",
-      error: "worker lost (server restart or different isolate)",
-      finishedAt: job.finishedAt ?? Date.now(),
+      detached: true,
+      error: "No live worker on this instance — showing last saved progress",
     };
   }
-  return job;
+  return {
+    ...job,
+    status: "failed",
+    detached: false,
+    error: "worker stopped (timeout or server restart)",
+    finishedAt: job.finishedAt ?? Date.now(),
+  };
+}
+
+function applyProgress(job: AdminJob, p: Record<string, unknown>, wall0: number): void {
+  job.progress = {
+    totalChecked: Number(p.totalChecked ?? 0),
+    aggregateKps: Number(p.aggregateKps ?? 0),
+    bestScorePercent: Number(p.bestScorePercent ?? 0),
+    wallElapsedSec: Number(p.wallElapsedSec ?? (Date.now() - wall0) / 1000),
+    bestAddress: String(p.bestAddress ?? ""),
+    bestAccuracyPercent: Number(p.bestAccuracyPercent ?? p.accuracyPercent ?? 0),
+    bestMatchedTargetChars: Number(p.bestMatchedTargetChars ?? p.matchedTargetChars ?? 0),
+    bestTargetLen: Number(p.bestTargetLen ?? p.targetLen ?? 0),
+    bestPrefixWindow: String(p.bestPrefixWindow ?? ""),
+    bestSuffixWindow: String(p.bestSuffixWindow ?? ""),
+    firstMismatchIndex: Number(p.firstMismatchIndex ?? -1),
+    lastMismatchIndex: Number(p.lastMismatchIndex ?? -1),
+    matchedPrefixChars: Number(p.matchedPrefixChars ?? 0),
+    matchedSuffixChars: Number(p.matchedSuffixChars ?? 0),
+    accuracyPercent: Number(p.accuracyPercent ?? 0),
+    runningAvgAccuracyPercent: Number(p.runningAvgAccuracyPercent ?? 0),
+    keygenBackend: String(p.keygenBackend ?? ""),
+    effectiveWorkers: Number(p.effectiveWorkers ?? 0),
+    reportingWorkers: Number(p.reportingWorkers ?? 0),
+    avgKpsWall: Number(p.avgKpsWall ?? 0),
+  };
+  job.progressUpdatedAt = Date.now();
+  job.detached = false;
 }
 
 function persistJob(job: AdminJob, immediate = false): void {
@@ -275,7 +318,9 @@ export function startBackgroundJob(
     hits: [],
     thresholdHits: [],
     error: null,
-    progress: { totalChecked: 0, aggregateKps: 0, bestScorePercent: 0, wallElapsedSec: 0 },
+    progress: { totalChecked: 0, aggregateKps: 0, bestScorePercent: 0, wallElapsedSec: 0, bestAddress: "" },
+    progressUpdatedAt: Date.now(),
+    detached: false,
   };
   persistJob(job, true);
   const ac = new AbortController();
@@ -284,6 +329,7 @@ export function startBackgroundJob(
   void (async () => {
     job.status = "running";
     job.startedAt = Date.now();
+    job.detached = false;
     persistJob(job, true);
     const wall0 = Date.now();
     log.info("admin_job_start", { id, perfMode, threads: opts.threads, maxWorkers: opts.maxWorkers });
@@ -292,12 +338,8 @@ export function startBackgroundJob(
         opts,
         {
           onProgress: (p) => {
-            job.progress = {
-              totalChecked: Number(p.totalChecked ?? 0),
-              aggregateKps: Number(p.aggregateKps ?? 0),
-              bestScorePercent: Number(p.bestScorePercent ?? 0),
-              wallElapsedSec: Number(((Date.now() - wall0) / 1000).toFixed(2)),
-            };
+            const wallSec = (Date.now() - wall0) / 1000;
+            applyProgress(job, { ...p, wallElapsedSec: wallSec }, wall0);
             persistJob(job);
           },
           onThreshold: (t) => {

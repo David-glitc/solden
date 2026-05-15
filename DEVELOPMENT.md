@@ -138,6 +138,13 @@
 - **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
 - **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
 
+## 2026-05-15 — Admin memory usage chart (Chart.js)
+- **`static/admin.html`:** Live memory chart (used RAM, process RSS, heap MB) updated from SSE monitor snapshots.
+
+## 2026-05-15 — Admin full run profile + reload-safe running jobs
+- **`src/types.ts` / `src/admin.ts`:** Progress stores best address, prefix/suffix windows, accuracy, keygen backend, workers; `progressUpdatedAt` + `detached` keep running jobs visible after reload (15min window).
+- **`static/admin.html`:** Run profile panel (score %, addr head, full address, match details).
+
 ## 2026-05-15 — Admin UI: charts, advanced opts, threshold log, run times
 - **`static/admin.html`:** Chart.js CDN throughput chart; advanced job form (case sensitive, encrypt, keygen…); per-job run clock + timestamps; threshold vs final hit tables with copy.
 
