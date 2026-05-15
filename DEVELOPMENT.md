@@ -138,6 +138,9 @@
 - **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
 - **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
 
+## 2026-05-15 — Admin UI: charts, advanced opts, threshold log, run times
+- **`static/admin.html`:** Chart.js CDN throughput chart; advanced job form (case sensitive, encrypt, keygen…); per-job run clock + timestamps; threshold vs final hit tables with copy.
+
 ## 2026-05-15 — Admin fix: stateless auth, job persistence, SSE UI
 - **`src/admin_auth.ts`:** HMAC signed tokens (no in-memory sessions) — fixes 401 on Deno Deploy isolates.
 - **`src/admin_store.ts`:** Jobs persisted to Deno KV (Deploy) or SQLite `admin_jobs` table (local).

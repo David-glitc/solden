@@ -5,44 +5,64 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="icon" href="/solden-mark.svg" type="image/svg+xml" />
   <title>Solden · Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.6/dist/chart.umd.min.js" crossorigin="anonymous"></script>
   <style>
     :root {
-      --bg: #0b1220; --card: #1e293b; --line: #334155;
-      --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6;
-      --ok: #22c55e; --err: #ef4444;
+      --bg: #0b1220; --card: #1e293b; --card2: #0f172a; --line: #334155;
+      --text: #e2e8f0; --muted: #94a3b8; --accent: #3b82f6; --ok: #22c55e; --err: #ef4444;
     }
     * { box-sizing: border-box; }
     body { margin: 0; font: 14px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-    .row .grow { flex: 1; }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .row .grow { flex: 1; min-width: 120px; }
     h1 { margin: 0; font-size: 1.2rem; }
+    h2 { margin: 0 0 10px; font-size: 0.95rem; }
     a { color: #93c5fd; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
-    .card h2 { margin: 0 0 12px; font-size: 0.95rem; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
-    .stat { background: #0f172a; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+    .grid-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+    .stat { background: var(--card2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
     .stat .k { font-size: 0.65rem; text-transform: uppercase; color: var(--muted); }
-    .stat .v { font-weight: 700; margin-top: 4px; }
-    .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
-    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; }
-    input, select { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; font: inherit; }
-    button { padding: 8px 14px; border: 0; border-radius: 6px; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; }
+    .stat .v { font-weight: 700; margin-top: 4px; font-size: 0.95rem; }
+    .form { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+    input, select { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: var(--card2); color: #fff; font: inherit; }
+    button { padding: 8px 14px; border: 0; border-radius: 6px; font-weight: 600; cursor: pointer; background: var(--accent); color: #fff; font-size: 0.85rem; }
     button.secondary { background: #475569; }
     button.danger { background: var(--err); }
+    button.sm { padding: 4px 8px; font-size: 0.75rem; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .hidden { display: none !important; }
-    .job { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 8px; background: #0f172a; }
-    .job .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+    .muted { color: var(--muted); font-size: 0.82rem; }
+    .err { color: #fca5a5; }
+    .mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.78rem; word-break: break-all; }
     .badge { font-size: 0.65rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
     .badge.running { background: #1e3a5f; color: #93c5fd; }
     .badge.done { background: #14532d; color: #86efac; }
     .badge.failed, .badge.cancelled { background: #3f3f46; color: #d4d4d8; }
     .badge.queued { background: #422006; color: #fcd34d; }
-    .mono { font-family: ui-monospace, monospace; font-size: 0.8rem; word-break: break-all; }
-    .muted { color: var(--muted); font-size: 0.82rem; }
-    .err { color: #fca5a5; }
-    #toast { position: fixed; bottom: 16px; right: 16px; background: #1e293b; border: 1px solid var(--line); padding: 10px 14px; border-radius: 8px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+    .live-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--ok); }
+    .live-pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 50% { opacity: 0.35; } }
+    .ram-bar { height: 8px; background: #334155; border-radius: 999px; overflow: hidden; margin-top: 8px; }
+    .ram-fill { height: 100%; background: linear-gradient(90deg, var(--ok), #4ade80); transition: width 0.3s; }
+    .ram-fill.warn { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .ram-fill.crit { background: linear-gradient(90deg, var(--err), #f87171); }
+    .chart-box { position: relative; height: 200px; }
+    details.adv { margin-top: 12px; }
+    details.adv summary { cursor: pointer; color: #93c5fd; font-size: 0.88rem; margin-bottom: 8px; }
+    .checks { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+    .checks label { flex-direction: row; align-items: center; text-transform: none; font-size: 0.85rem; color: var(--text); }
+    .checks input { width: auto; margin-right: 6px; }
+    .job { border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 10px; background: var(--card2); }
+    .job-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .job-head .id { flex: 1; min-width: 140px; }
+    .keys-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 8px; }
+    .keys-table th, .keys-table td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); }
+    .keys-table th { color: var(--muted); font-weight: 600; font-size: 0.68rem; text-transform: uppercase; }
+    #toast { position: fixed; bottom: 16px; right: 16px; background: #1e293b; border: 1px solid var(--line); padding: 10px 14px; border-radius: 8px; z-index: 99; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
     #toast.show { opacity: 1; }
     #statusBar { font-size: 0.8rem; color: var(--muted); }
     #statusBar.ok { color: var(--ok); }
@@ -57,60 +77,90 @@
         <h1>Admin</h1>
         <a href="/">← Search</a>
       </div>
+      <span class="live-pill hidden" id="livePill">Live</span>
       <span id="statusBar">Offline</span>
+      <span class="muted" id="lastUpdate">—</span>
       <button type="button" class="secondary hidden" id="logoutBtn">Sign out</button>
     </header>
 
     <section class="card" id="loginCard">
       <h2>Sign in</h2>
       <p class="muted">Set <code>VANITY_ADMIN_PASSWORD</code> on the server.</p>
-      <div class="form" style="max-width:320px">
-        <label>Password<input id="adminPw" type="password" autocomplete="current-password" /></label>
-      </div>
-      <div class="row" style="margin-top:12px">
-        <button type="button" id="loginBtn">Sign in</button>
-      </div>
+      <label style="max-width:320px">Password<input id="adminPw" type="password" autocomplete="current-password" /></label>
+      <div class="row" style="margin-top:12px"><button type="button" id="loginBtn">Sign in</button></div>
       <p id="loginErr" class="err hidden"></p>
     </section>
 
-    <div id="appPanel" class="hidden" style="display:flex;flex-direction:column;gap:16px">
-      <section class="card">
-        <h2>System</h2>
-        <div class="grid" id="monitorGrid"></div>
-        <div class="row" style="margin-top:12px">
-          <button type="button" class="secondary" id="clearMemBtn">Clear finished jobs</button>
-          <button type="button" class="danger" id="restartBtn">Restart process</button>
-        </div>
-        <p class="muted" style="margin:8px 0 0">Restart needs <code>VANITY_ADMIN_ALLOW_RESTART=1</code></p>
-      </section>
+    <div id="appPanel" class="hidden">
+      <div class="grid-2">
+        <section class="card">
+          <h2>Throughput</h2>
+          <p class="muted">Live keys/s from running jobs (Chart.js)</p>
+          <div class="chart-box"><canvas id="kpsChart"></canvas></div>
+        </section>
+        <section class="card">
+          <h2>System</h2>
+          <div class="grid-stats" id="monitorGrid"></div>
+          <div class="ram-bar"><div class="ram-fill" id="ramFill" style="width:0%"></div></div>
+          <div class="row" style="margin-top:12px">
+            <button type="button" class="secondary" id="clearMemBtn">Clear finished</button>
+            <button type="button" class="danger" id="restartBtn">Restart</button>
+          </div>
+        </section>
+      </div>
 
       <section class="card">
-        <h2>New job</h2>
+        <h2>New background job</h2>
         <div class="form">
           <label>Prefix<input id="jPrefix" value="meth" spellcheck="false" /></label>
           <label>Suffix<input id="jSuffix" value="" spellcheck="false" /></label>
           <label>Count<input id="jCount" type="number" min="1" value="1" /></label>
           <label>Threshold %<input id="jThreshold" type="number" min="0" max="100" value="90" /></label>
-          <label>Mode
+          <label>Threads<input id="jThreads" type="number" min="1" max="512" value="4" /></label>
+          <label>Max workers<input id="jMaxWorkers" type="number" min="1" max="1024" value="64" /></label>
+          <label>Performance
             <select id="jPerfMode">
               <option value="standard">Standard</option>
-              <option value="unthrottled">Unthrottled</option>
-              <option value="extreme" selected>Extreme</option>
+              <option value="unthrottled">Unthrottled (~90%)</option>
+              <option value="extreme" selected>Extreme (all cores)</option>
             </select>
           </label>
         </div>
-        <div class="row" style="margin-top:12px">
+        <details class="adv" open>
+          <summary>Advanced settings</summary>
+          <div class="form" style="margin-top:10px">
+            <label>Keygen
+              <select id="jKeygen">
+                <option value="auto" selected>auto</option>
+                <option value="sodium">sodium</option>
+                <option value="node">node</option>
+                <option value="noble">noble</option>
+                <option value="subtle">subtle</option>
+              </select>
+            </label>
+            <label>Keygen batch<input id="jKeygenBatch" type="number" min="8" max="256" value="64" /></label>
+            <label>Worker multiplier<input id="jBunOver" type="number" min="0.1" max="4" step="0.05" value="1" /></label>
+            <label>Progress step<input id="jProgressEvery" type="number" min="64" max="10000000" value="2048" /></label>
+            <label>UI refresh ms<input id="jUiRefresh" type="number" min="25" max="60000" value="120" /></label>
+            <label style="grid-column:1/-1">Decrypt key<input id="jDecryptKey" type="password" autocomplete="off" placeholder="Blank = auto" /></label>
+          </div>
+          <div class="checks">
+            <label><input id="jCaseSensitive" type="checkbox" /> Case sensitive</label>
+            <label><input id="jEncrypt" type="checkbox" /> Encrypt secret</label>
+            <label><input id="jWebgpu" type="checkbox" /> WebGPU probe</label>
+          </div>
+        </details>
+        <div class="row" style="margin-top:14px">
           <button type="button" id="spawnJobBtn">Start job</button>
         </div>
       </section>
 
       <section class="card">
-        <h2>Jobs <span class="muted" id="jobsHint">(live stream)</span></h2>
+        <h2>Jobs <span class="muted" id="jobsHint"></span></h2>
         <div id="jobsList"><p class="muted">No jobs yet.</p></div>
       </section>
     </div>
   </div>
-
   <div id="toast"></div>
 
   <script>
@@ -119,6 +169,10 @@
     const q = (id) => document.getElementById(id);
     let es = null;
     let authFailCount = 0;
+    let lastStreamTs = 0;
+    let kpsChart = null;
+    const kpsHistory = [];
+    const MAX_CHART_POINTS = 60;
 
     function token() { return localStorage.getItem(TOKEN_KEY) || ""; }
     function setToken(t) { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); }
@@ -140,27 +194,56 @@
       el.textContent = msg;
       el.className = ok ? "ok" : ok === false ? "err" : "";
     }
+    function esc(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+    function pickInt(id, min, max, fb) {
+      let n = parseInt(q(id).value, 10);
+      if (Number.isNaN(n)) n = fb;
+      return Math.max(min, Math.min(max, n));
+    }
+    function pickFloat(id, min, max, fb) {
+      let n = parseFloat(q(id).value);
+      if (Number.isNaN(n)) n = fb;
+      return Math.max(min, Math.min(max, n));
+    }
+    function formatClock(ms) {
+      if (!ms || ms < 0) return "—";
+      const s = Math.floor(ms / 1000);
+      if (s < 60) return s + "s";
+      const m = Math.floor(s / 60);
+      const rs = s % 60;
+      if (m < 60) return m + "m " + String(rs).padStart(2, "0") + "s";
+      const h = Math.floor(m / 60);
+      return h + "h " + String(m % 60).padStart(2, "0") + "m";
+    }
+    function jobRunMs(job) {
+      if (job.status === "running" && job.startedAt) return Date.now() - job.startedAt;
+      if (job.startedAt && job.finishedAt) return job.finishedAt - job.startedAt;
+      const w = (job.progress && job.progress.wallElapsedSec) ? job.progress.wallElapsedSec * 1000 : 0;
+      return w;
+    }
+    function fmtTime(ts) {
+      if (!ts) return "—";
+      return new Date(ts).toLocaleString();
+    }
 
     async function api(path, opts) {
       let r;
       try {
         r = await fetch(path, Object.assign({ headers: headers() }, opts || {}));
       } catch (e) {
-        throw new Error("Network error — check server is running and CORS allows this origin.");
+        throw new Error("Network error — check server and CORS.");
       }
       const text = await r.text();
       let j = null;
       try { j = JSON.parse(text); } catch { /* ignore */ }
       if (r.status === 401) {
         authFailCount++;
-        if (authFailCount >= 2) {
-          setToken("");
-          stopStream();
-          showLogin();
-        }
-        throw new Error((j && j.error) || "Session expired — sign in again");
+        if (authFailCount >= 3) { setToken(""); stopStream(); showLogin(); }
+        throw new Error((j && j.error) || "Session expired");
       }
-      if (r.status === 503) throw new Error((j && j.error) || "Admin not configured on server (set VANITY_ADMIN_PASSWORD)");
+      if (r.status === 503) throw new Error((j && j.error) || "Admin not configured (VANITY_ADMIN_PASSWORD)");
       if (!r.ok) throw new Error((j && j.error) || text.slice(0, 160));
       authFailCount = 0;
       return j;
@@ -170,71 +253,168 @@
       q("loginCard").classList.remove("hidden");
       q("appPanel").classList.add("hidden");
       q("logoutBtn").classList.add("hidden");
+      q("livePill").classList.add("hidden");
       setStatus("Signed out", null);
     }
     function showApp() {
       q("loginCard").classList.add("hidden");
       q("appPanel").classList.remove("hidden");
+      q("appPanel").style.display = "flex";
+      q("appPanel").style.flexDirection = "column";
+      q("appPanel").style.gap = "16px";
       q("logoutBtn").classList.remove("hidden");
     }
 
-    function esc(s) {
-      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    function initChart() {
+      if (kpsChart || typeof Chart === "undefined") return;
+      const ctx = q("kpsChart").getContext("2d");
+      kpsChart = new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: [],
+          datasets: [{
+            label: "Keys/s",
+            data: [],
+            borderColor: "#3b82f6",
+            backgroundColor: "rgba(59,130,246,0.15)",
+            fill: true,
+            tension: 0.25,
+            pointRadius: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: false,
+          scales: {
+            x: { ticks: { color: "#94a3b8", maxTicksLimit: 8 }, grid: { color: "#334155" } },
+            y: { ticks: { color: "#94a3b8" }, grid: { color: "#334155" }, beginAtZero: true },
+          },
+          plugins: { legend: { labels: { color: "#e2e8f0" } } },
+        },
+      });
+    }
+
+    function pushChartPoint(kps) {
+      if (!kpsChart) return;
+      const label = new Date().toLocaleTimeString();
+      kpsHistory.push({ label, kps });
+      if (kpsHistory.length > MAX_CHART_POINTS) kpsHistory.shift();
+      kpsChart.data.labels = kpsHistory.map((p) => p.label);
+      kpsChart.data.datasets[0].data = kpsHistory.map((p) => p.kps);
+      kpsChart.update("none");
     }
 
     function renderMonitor(m) {
       if (!m) return;
+      const pct = m.memoryFreePercent;
       const rows = [
         ["Free RAM", m.memoryFreeMB != null ? m.memoryFreeMB + " MB" : "—"],
         ["Used RAM", m.memoryUsedMB != null ? m.memoryUsedMB + " MB" : "—"],
         ["RSS", m.rssMB != null ? m.rssMB + " MB" : "—"],
-        ["CPU cores", m.cpuCount],
-        ["Running", m.runningJobs],
+        ["CPU", m.cpuCount + " cores"],
+        ["Running jobs", m.runningJobs],
+        ["Threshold keys", m.thresholdHitsStored],
         ["Runtime", m.runtime],
       ];
-      q("monitorGrid").innerHTML = rows.map(([k,v]) =>
+      q("monitorGrid").innerHTML = rows.map(([k, v]) =>
         '<div class="stat"><div class="k">' + k + '</div><div class="v">' + v + '</div></div>').join("");
+      const fill = q("ramFill");
+      if (fill && pct != null) {
+        fill.style.width = Math.max(0, Math.min(100, pct)) + "%";
+        fill.className = "ram-fill" + (pct < 15 ? " crit" : pct < 30 ? " warn" : "");
+      }
+    }
+
+    function keysTable(title, rows, jobId, kind) {
+      if (!rows.length) return "";
+      const head = '<table class="keys-table"><thead><tr><th>Score</th><th>Address</th><th>Found</th><th></th></tr></thead><tbody>';
+      const body = rows.map(function(h, i) {
+        const when = h.foundAt ? fmtTime(h.foundAt) : "—";
+        return '<tr><td>' + h.score + '%</td><td class="mono">' + esc(h.address) + '</td><td class="muted">' + when +
+          '</td><td><button type="button" class="secondary sm" data-copy="' + esc(jobId) + ':' + kind + ':' + i + '">Copy</button></td></tr>';
+      }).join("");
+      return '<p class="muted" style="margin:12px 0 4px"><strong>' + esc(title) + '</strong> (' + rows.length + ')</p>' + head + body + '</tbody></table>';
     }
 
     function renderJobs(jobs) {
       const el = q("jobsList");
+      window.__adminJobs = jobs || [];
       if (!jobs || !jobs.length) {
         el.innerHTML = '<p class="muted">No jobs yet.</p>';
         return;
       }
+      let totalKps = 0;
       el.innerHTML = jobs.map(function(job) {
         const p = job.progress || {};
         const mode = job.perfMode || "standard";
-        const hits = (job.hits || []).concat(job.thresholdHits || []);
-        const hitsHtml = hits.length
-          ? hits.slice(0, 5).map(h => '<div class="mono">' + esc(h.address) + ' · ' + h.score + '%</div>').join("")
-          : '<div class="muted">No keys yet</div>';
+        const thr = job.opts.threshold != null ? job.opts.threshold : 90;
+        const runMs = jobRunMs(job);
+        if (job.status === "running") totalKps += Number(p.aggregateKps || 0);
+        const optsLine = [
+          esc(job.opts.prefix) + " / " + esc(job.opts.suffix || "—"),
+          "mode " + mode,
+          job.opts.threads + "t · cap " + job.opts.maxWorkers,
+          "keygen " + (job.opts.keygen || "auto"),
+          job.opts.caseSensitive ? "case-sensitive" : "case-insensitive",
+          job.opts.encrypt ? "encrypt on" : "",
+        ].filter(Boolean).join(" · ");
+        const hits = job.hits || [];
+        const thrHits = job.thresholdHits || [];
         const actions =
           (job.status === "running" || job.status === "queued"
-            ? '<button type="button" class="danger" data-cancel="' + esc(job.id) + '">Cancel</button> '
+            ? '<button type="button" class="danger sm" data-cancel="' + esc(job.id) + '">Cancel</button> '
             : "") +
-          '<button type="button" class="secondary" data-delete="' + esc(job.id) + '">Delete</button>';
+          '<button type="button" class="secondary sm" data-delete="' + esc(job.id) + '">Delete</button>';
         return '<div class="job" data-id="' + esc(job.id) + '">' +
-          '<div class="head"><span class="badge ' + job.status + '">' + job.status + '</span>' +
-          '<span class="mono">' + esc(job.id) + '</span></div>' +
-          '<div class="muted">' + esc(job.opts.prefix) + ' / ' + esc(job.opts.suffix || "—") +
-          ' · ' + mode + ' · ' + (p.totalChecked||0).toLocaleString() + ' keys · ' +
-          (p.aggregateKps||0).toLocaleString() + '/s</div>' +
-          hitsHtml +
-          (job.error ? '<div class="err">' + esc(job.error) + '</div>' : '') +
+          '<div class="job-head">' +
+          '<span class="badge ' + job.status + '">' + job.status + '</span>' +
+          '<span class="id mono">' + esc(job.id) + '</span>' +
+          '<span class="muted">⏱ ' + formatClock(runMs) + '</span>' +
+          '</div>' +
+          '<div class="muted">Created ' + fmtTime(job.createdAt) +
+          (job.startedAt ? ' · Started ' + fmtTime(job.startedAt) : '') +
+          (job.finishedAt ? ' · Finished ' + fmtTime(job.finishedAt) : '') + '</div>' +
+          '<div class="muted">' + optsLine + '</div>' +
+          '<div class="row" style="margin:6px 0">' +
+          '<span class="stat" style="flex:1"><span class="k">Keys checked</span><span class="v">' + (p.totalChecked||0).toLocaleString() + '</span></span>' +
+          '<span class="stat" style="flex:1"><span class="k">Speed</span><span class="v">' + (p.aggregateKps||0).toLocaleString() + ' /s</span></span>' +
+          '<span class="stat" style="flex:1"><span class="k">Best match</span><span class="v">' + (p.bestScorePercent||0) + '%</span></span>' +
+          '</div>' +
+          keysTable("Threshold captures (≥ " + thr + "%)", thrHits, job.id, "thr") +
+          keysTable("Final hits", hits, job.id, "hit") +
+          (job.error ? '<p class="err">' + esc(job.error) + '</p>' : '') +
           '<div class="row" style="margin-top:8px">' + actions + '</div></div>';
       }).join("");
-      el.querySelectorAll("[data-cancel]").forEach(btn => {
-        btn.onclick = async () => {
+      pushChartPoint(totalKps);
+
+      el.querySelectorAll("[data-copy]").forEach(function(btn) {
+        btn.onclick = function() {
+          const parts = btn.dataset.copy.split(":");
+          const jobId = parts[0];
+          const kind = parts[1];
+          const i = parseInt(parts[2], 10);
+          const job = (window.__adminJobs || []).find(function(j) { return j.id === jobId; });
+          if (!job) return;
+          const list = kind === "thr" ? (job.thresholdHits || []) : (job.hits || []);
+          const h = list[i];
+          if (h && h.secretKey) {
+            navigator.clipboard.writeText(h.secretKey);
+            toast("Copied secret");
+          }
+        };
+      });
+      el.querySelectorAll("[data-cancel]").forEach(function(btn) {
+        btn.onclick = async function() {
           try {
             await api("/admin/api/jobs/" + encodeURIComponent(btn.dataset.cancel) + "?cancel=1", { method: "DELETE" });
             toast("Cancelled");
           } catch (e) { toast(e.message); }
         };
       });
-      el.querySelectorAll("[data-delete]").forEach(btn => {
-        btn.onclick = async () => {
-          if (!confirm("Delete this job?")) return;
+      el.querySelectorAll("[data-delete]").forEach(function(btn) {
+        btn.onclick = async function() {
+          if (!confirm("Delete job?")) return;
           try {
             await api("/admin/api/jobs/" + encodeURIComponent(btn.dataset.delete), { method: "DELETE" });
             toast("Deleted");
@@ -243,24 +423,31 @@
       });
     }
 
+    function updateLastSeen(ts) {
+      lastStreamTs = ts || Date.now();
+      const el = q("lastUpdate");
+      const ago = Math.max(0, Math.floor((Date.now() - lastStreamTs) / 1000));
+      el.textContent = ago < 2 ? "just now" : ago + "s ago";
+    }
+
     function onSnapshot(data) {
+      updateLastSeen(data.ts);
       if (data.monitor) renderMonitor(data.monitor);
       if (data.jobs) renderJobs(data.jobs);
-      const active = (data.jobs || []).some(j => j.status === "running" || j.status === "queued");
-      q("jobsHint").textContent = active ? "(live · streaming)" : "(idle)";
+      const active = (data.jobs || []).some(function(j) { return j.status === "running" || j.status === "queued"; });
+      q("jobsHint").textContent = active ? "· " + (data.jobs || []).filter(function(j) { return j.status === "running"; }).length + " running" : "";
+      q("livePill").classList.toggle("hidden", !active);
       setStatus(active ? "Live" : "Connected", true);
     }
 
     function stopStream() {
       if (es) { es.close(); es = null; }
     }
-
     function startStream() {
       stopStream();
       const t = token();
       if (!t) return;
-      const url = "/admin/api/stream";
-      es = new EventSource(url + "?token=" + encodeURIComponent(t));
+      es = new EventSource("/admin/api/stream?token=" + encodeURIComponent(t));
       es.onmessage = function(ev) {
         try {
           const data = JSON.parse(ev.data);
@@ -269,15 +456,39 @@
         } catch { /* ignore */ }
       };
       es.onerror = function() {
-        setStatus("Stream reconnecting…", false);
+        setStatus("Reconnecting…", false);
         stopStream();
         setTimeout(startStream, 2000);
       };
     }
 
-    async function verifySession() {
-      await api("/admin/api/monitor");
-      return true;
+    setInterval(function() {
+      if (lastStreamTs) updateLastSeen(lastStreamTs);
+    }, 1000);
+
+    function buildJobBody() {
+      const perf = q("jPerfMode").value;
+      return {
+        prefix: q("jPrefix").value.trim(),
+        suffix: q("jSuffix").value.trim(),
+        count: pickInt("jCount", 1, 1000000, 1),
+        threshold: pickInt("jThreshold", 0, 100, 90),
+        threads: pickInt("jThreads", 1, 512, 4),
+        maxWorkers: pickInt("jMaxWorkers", 1, 1024, 64),
+        progressEvery: pickInt("jProgressEvery", 64, 10000000, 2048),
+        uiRefreshMs: pickInt("jUiRefresh", 25, 60000, 120),
+        bunOversubscribe: pickFloat("jBunOver", 0.1, 4, 1),
+        threadsMultiplier: pickFloat("jBunOver", 0.1, 4, 1),
+        caseSensitive: q("jCaseSensitive").checked,
+        encrypt: q("jEncrypt").checked,
+        useWebgpu: q("jWebgpu").checked,
+        decryptKey: q("jDecryptKey").value.trim(),
+        keygen: q("jKeygen").value,
+        keygenBatch: pickInt("jKeygenBatch", 8, 256, 64),
+        perfMode: perf,
+        extreme: perf === "extreme",
+        unthrottled: perf === "unthrottled",
+      };
     }
 
     q("loginBtn").onclick = async function() {
@@ -293,6 +504,7 @@
         setToken(j.token);
         authFailCount = 0;
         showApp();
+        initChart();
         startStream();
         toast("Signed in");
       } catch (e) {
@@ -308,21 +520,10 @@
     };
 
     q("spawnJobBtn").onclick = async function() {
-      const prefix = q("jPrefix").value.trim();
-      const suffix = q("jSuffix").value.trim();
-      if (!prefix && !suffix) { toast("Prefix or suffix required"); return; }
+      const body = buildJobBody();
+      if (!body.prefix && !body.suffix) { toast("Prefix or suffix required"); return; }
       try {
-        await api("/admin/api/jobs", {
-          method: "POST",
-          body: JSON.stringify({
-            prefix, suffix,
-            count: parseInt(q("jCount").value, 10) || 1,
-            threshold: parseInt(q("jThreshold").value, 10) || 90,
-            perfMode: q("jPerfMode").value,
-            threads: 4,
-            maxWorkers: 64,
-          }),
-        });
+        await api("/admin/api/jobs", { method: "POST", body: JSON.stringify(body) });
         toast("Job started");
       } catch (e) { toast(e.message); }
     };
@@ -335,15 +536,15 @@
     };
 
     q("restartBtn").onclick = async function() {
-      if (!confirm("Restart server process?")) return;
+      if (!confirm("Restart server?")) return;
       try {
         const r = await api("/admin/api/system/restart", { method: "POST" });
         toast(r.message || "Restarting");
-        setTimeout(() => location.reload(), 2000);
+        setTimeout(function() { location.reload(); }, 2000);
       } catch (e) { toast(e.message); }
     };
 
-    fetch("/admin/api/status").then(r => r.json()).then(s => {
+    fetch("/admin/api/status").then(function(r) { return r.json(); }).then(function(s) {
       if (!s.configured) {
         q("loginErr").textContent = "VANITY_ADMIN_PASSWORD not set on server.";
         q("loginErr").classList.remove("hidden");
@@ -352,7 +553,8 @@
 
     if (token()) {
       showApp();
-      verifySession().then(() => startStream()).catch(e => {
+      initChart();
+      api("/admin/api/monitor").then(function() { startStream(); }).catch(function(e) {
         toast(e.message);
         if (/expired|unauthorized/i.test(e.message)) showLogin();
         else startStream();
