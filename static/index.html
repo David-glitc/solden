@@ -441,6 +441,52 @@
         .grind-progress[hidden] {
             display: none !important;
         }
+
+        .advanced-toggle-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--line);
+        }
+
+        .advanced-toggle-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        #advancedPanel[hidden] {
+            display: none !important;
+        }
+
+        #advancedPanel {
+            margin-top: 4px;
+            padding-top: 14px;
+            border-top: 1px dashed var(--line);
+        }
+
+        #advancedPanel .field-hint {
+            font-size: 0.8rem;
+            color: var(--muted);
+            margin: 0 0 12px;
+        }
+
+        select {
+            width: 100%;
+            min-height: var(--touch-min);
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            border-radius: var(--radius-md);
+            font: inherit;
+            background: var(--paper);
+        }
         
         .spinner {
             width: 22px;
@@ -941,20 +987,48 @@
                     <div><label for="threshold" title="Show “almost matched” updates when the match is at least this strong">Near-match %</label><input id="threshold" type="number" min="0" max="100" value="90" /></div>
                 </div>
             </fieldset>
-            <fieldset class="field-group">
-                <legend class="field-legend">Optional speed tuning</legend>
-                <div class="row">
-                    <div><label for="progressEvery" title="Lower = more frequent updates (smoother bar, a bit more traffic)">Progress step</label><input id="progressEvery" type="number" min="64" value="512" /></div>
-                    <div><label for="uiRefreshMs" title="How often the server may refresh progress (milliseconds)">Update spacing (ms)</label><input id="uiRefreshMs" type="number" min="25" value="120" /></div>
-                    <div><label for="maxWorkers" title="Safety cap on parallel lanes for this search">Max parallel lanes</label><input id="maxWorkers" type="number" min="1" value="256" /></div>
-                </div>
-            </fieldset>
+            <div class="advanced-toggle-row">
+                <label for="advancedMode"><input id="advancedMode" type="checkbox" /> Advanced mode</label>
+                <span class="field-hint" style="margin:0">Keygen, batch size, worker caps, encryption passphrase.</span>
+            </div>
+            <div id="advancedPanel" hidden>
+                <p class="field-hint">Maps to CLI flags and POST /grind JSON. Env VANITY_KEYGEN* overrides keygen on the server when set.</p>
+                <fieldset class="field-group">
+                    <legend class="field-legend">Throughput</legend>
+                    <div class="row">
+                        <div><label for="keygen" title="Ed25519 backend">Keygen backend</label>
+                            <select id="keygen">
+                                <option value="auto" selected>auto</option>
+                                <option value="sodium">sodium</option>
+                                <option value="node">node</option>
+                                <option value="noble">noble</option>
+                                <option value="subtle">subtle</option>
+                            </select>
+                        </div>
+                        <div><label for="keygenBatch" title="Keys per worker batch">Keygen batch</label><input id="keygenBatch" type="number" min="8" max="256" value="64" /></div>
+                        <div><label for="bunOversubscribe" title="threadsMultiplier">Worker multiplier</label><input id="bunOversubscribe" type="number" min="0.1" max="4" step="0.05" value="1" /></div>
+                    </div>
+                    <div class="row">
+                        <div><label for="progressEvery" title="Worker progress cadence">Progress step</label><input id="progressEvery" type="number" min="64" max="10000000" value="512" /></div>
+                        <div><label for="uiRefreshMs" title="HTTP progress throttle ms">Update spacing (ms)</label><input id="uiRefreshMs" type="number" min="25" max="60000" value="120" /></div>
+                        <div><label for="maxWorkers" title="Cap effective workers">Max parallel lanes</label><input id="maxWorkers" type="number" min="1" max="1024" value="256" /></div>
+                    </div>
+                </fieldset>
+                <fieldset class="field-group">
+                    <legend class="field-legend">Experimental</legend>
+                    <div class="checks">
+                        <label title="Probe WebGPU"><input id="useWebgpu" type="checkbox" /> WebGPU probe</label>
+                    </div>
+                    <div class="row" style="margin-top:10px">
+                        <div style="grid-column:1/-1"><label for="decryptKey" title="AES passphrase or hex key">Decrypt key / passphrase</label><input id="decryptKey" type="password" autocomplete="off" placeholder="Blank = auto key" /></div>
+                    </div>
+                </fieldset>
+            </div>
             <fieldset class="field-group">
                 <legend class="field-legend">Options</legend>
                 <div class="checks">
                     <label title="Match uppercase and lowercase exactly for prefix and suffix"><input id="caseSensitive" type="checkbox" /> Match exact letter case</label>
-                    <label title="Protect your secret key with a password—you will see a separate unlock key in the results"><input id="encrypt" type="checkbox" /> Encrypt my secret key</label>
-                    <label title="Advanced: ask the server to check for GPU support (search still runs the usual way)"><input id="useWebgpu" type="checkbox" /> Check for GPU support</label>
+                    <label title="Protect your secret key with AES-256-GCM"><input id="encrypt" type="checkbox" /> Encrypt my secret key</label>
                 </div>
             </fieldset>
             <div class="grind-actions">
@@ -1162,6 +1236,76 @@
                 return n;
             }
 
+            function pickFloat(id, min, max, fallback) {
+                var el = q(id);
+                var raw = el && el.value != null && el.value !== "" ? String(el.value).trim() : "";
+                var n = parseFloat(raw);
+                if (Number.isNaN(n)) n = fallback;
+                if (n < min) n = min;
+                if (typeof max === "number" && n > max) n = max;
+                return n;
+            }
+
+            function isAdvancedMode() {
+                var el = q("advancedMode");
+                return !!(el && el.checked);
+            }
+
+            function setAdvancedPanelVisible(on) {
+                var panel = q("advancedPanel");
+                if (panel) panel.hidden = !on;
+            }
+
+            function buildGrindBody(prefix, suffix) {
+                var body = {
+                    prefix: prefix,
+                    suffix: suffix,
+                    count: pickInt("count", 1, 1000000, 1),
+                    threads: pickInt("threads", 1, 512, 16),
+                    threshold: pickInt("threshold", 0, 100, 90),
+                    caseSensitive: !!(q("caseSensitive") && q("caseSensitive").checked),
+                    encrypt: !!(q("encrypt") && q("encrypt").checked),
+                    progressEvery: pickInt("progressEvery", 64, 10000000, 512),
+                    uiRefreshMs: pickInt("uiRefreshMs", 25, 60000, 120),
+                    maxWorkers: pickInt("maxWorkers", 1, 1024, 256),
+                    threadsMultiplier: pickFloat("bunOversubscribe", 0.1, 4, 1),
+                    bunOversubscribe: pickFloat("bunOversubscribe", 0.1, 4, 1),
+                    useWebgpu: !!(q("useWebgpu") && q("useWebgpu").checked),
+                    decryptKey: getStr("decryptKey"),
+                    keygen: (q("keygen") && q("keygen").value) ? String(q("keygen").value) : "auto",
+                    keygenBatch: pickInt("keygenBatch", 8, 256, 64),
+                };
+                if (!isAdvancedMode()) {
+                    body.keygen = "auto";
+                    body.keygenBatch = 64;
+                    body.threadsMultiplier = 1;
+                    body.bunOversubscribe = 1;
+                    body.useWebgpu = false;
+                    body.decryptKey = "";
+                }
+                return body;
+            }
+
+            (function initAdvancedUi() {
+                var adv = q("advancedMode");
+                var panel = q("advancedPanel");
+                try {
+                    var saved = localStorage.getItem("solden_advanced_mode");
+                    if (adv && saved === "1") {
+                        adv.checked = true;
+                        if (panel) panel.hidden = false;
+                    }
+                } catch (e) { /* ignore */ }
+                if (adv) {
+                    adv.addEventListener("change", function() {
+                        setAdvancedPanelVisible(adv.checked);
+                        try {
+                            localStorage.setItem("solden_advanced_mode", adv.checked ? "1" : "0");
+                        } catch (e2) { /* ignore */ }
+                    });
+                }
+            })();
+
             function fmtMis(first, last, pLen, sLen) {
                 function cell(i) {
                     if (i == null || i < 0) return "—";
@@ -1225,8 +1369,9 @@
                     } else if (d.wallElapsedSec != null) {
                         timePart = " · " + d.wallElapsedSec + "s elapsed";
                     }
+                    var kg = d.keygenBackend ? " · keygen " + d.keygenBackend : "";
                     throughputSub.textContent =
-                        (d.effectiveWorkers ?? "?") + " parallel lanes · " + checkedPart + timePart;
+                        (d.effectiveWorkers ?? "?") + " parallel lanes · " + checkedPart + timePart + kg;
                 }
                 updateDiff();
             }
@@ -1704,21 +1849,7 @@
 
                 try {
                     var grindUrl = apiUrl("/grind");
-                    var body = {
-                        prefix: prefix,
-                        suffix: suffix,
-                        count: pickInt("count", 1, 1000000, 1),
-                        threads: pickInt("threads", 1, 512, 16),
-                        threadsMultiplier: 1,
-                        threshold: pickInt("threshold", 0, 100, 90),
-                        progressEvery: pickInt("progressEvery", 64, 10000000, 512),
-                        uiRefreshMs: pickInt("uiRefreshMs", 25, 60000, 500),
-                        maxWorkers: pickInt("maxWorkers", 1, 1024, 256),
-                        caseSensitive: !!(q("caseSensitive") && q("caseSensitive").checked),
-                        encrypt: !!(q("encrypt") && q("encrypt").checked),
-                        useWebgpu: !!(q("useWebgpu") && q("useWebgpu").checked),
-                        decryptKey: ""
-                    };
+                    var body = buildGrindBody(prefix, suffix);
 
                     var r = await fetch(grindUrl, {
                         method: "POST",

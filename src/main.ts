@@ -91,6 +91,8 @@ function parseHttpGrindBody(body: Partial<GrindOpts>): GrindOpts {
     encrypt:       Boolean(body.encrypt),
     decryptKey:    String(body.decryptKey ?? ""),
     useWebgpu:     resolveWebGpuForHttp(Boolean(body.useWebgpu)),
+    keygen:        resolveKeygenForHttp(body.keygen),
+    keygenBatch:   Math.max(8, Math.min(256, Number(body.keygenBatch) || keygenBatchDefault())),
   };
 }
 
@@ -138,6 +140,25 @@ function resolveWebGpuForHttp(bodyFlag: boolean): boolean {
   return bodyFlag;
 }
 
+function keygenBatchDefault(): number {
+  const n = parseInt(env("VANITY_KEYGEN_BATCH") ?? "64", 10);
+  return Number.isFinite(n) ? n : 64;
+}
+
+function resolveKeygenCli(): string {
+  const e = (env("VANITY_KEYGEN") ?? "").trim().toLowerCase();
+  if (e) return e;
+  const k = str(["keygen", "K"], "");
+  return k || "auto";
+}
+
+function resolveKeygenForHttp(bodyVal: string | undefined): string {
+  const e = (env("VANITY_KEYGEN") ?? "").trim().toLowerCase();
+  if (e) return e;
+  const v = String(bodyVal ?? "").trim().toLowerCase();
+  return v || "auto";
+}
+
 if (flag(["verbose", "v"])) configureLogging({ level: "debug" });
 const log = createLogger("main");
 
@@ -155,6 +176,8 @@ const opts: GrindOpts = {
   encrypt:       flag(["encrypt",   "e"]),
   decryptKey:    str(["decrypt-key","k"]),
   useWebgpu:     webGpuWanted(),
+  keygen:        resolveKeygenCli(),
+  keygenBatch:   num(["keygen-batch", "G"], keygenBatchDefault()),
 };
 
 const dbPath  = str(["db-path", "d"], "vanity.db");
@@ -196,6 +219,14 @@ OPTIONS
   -P, --port <int>          Server port               [default: 3737]
   -v, --verbose             Debug logging (LOG_LEVEL=debug)
   -W, --use-webgpu          Probe WebGPU (Deno local only; keygen stays CPU unless extended)
+  -K, --keygen <mode>       Keygen: auto|sodium|noble|node|subtle  [default: auto]
+  -G, --keygen-batch <int>  Keys per worker batch (8–256)         [default: 64]
+
+ENV (local max throughput toward ~500k keys/s aggregate)
+  VANITY_KEYGEN=auto|sodium|noble|node|subtle
+  VANITY_KEYGEN_BATCH=64
+  Install optional native speed: npm i sodium-native @noble/ed25519 @noble/hashes
+  Example: bun main.ts -t 16 -m 32 -B 1.5 -K auto -G 64 -g 8192 -p XXXX
 
 DEV & LOGS
   deno task server-ui       Restarts the server when project files change (uses deno run --watch).
@@ -880,6 +911,8 @@ async function runCli() {
     bunOversubscribe: opts.bunOversubscribe,
     maxWorkers: opts.maxWorkers,
     progressEvery: opts.progressEvery,
+    keygen: opts.keygen,
+    keygenBatch: opts.keygenBatch,
     uiRefreshMs: opts.uiRefreshMs,
     count: opts.count,
     threshold: opts.threshold,
@@ -907,6 +940,8 @@ async function runCli() {
     ["Pattern lens pfx,sfx", `${opts.prefix.length},${opts.suffix.length}`],
     ["Case-sensitive", String(opts.caseSensitive)],
     ["Threshold / count", `${opts.threshold}% / ${opts.count}`],
+    ["Keygen (-K)", String(opts.keygen)],
+    ["Keygen batch (-G)", String(opts.keygenBatch)],
     ["DB path", dbPath],
     ["Output JSONL", outFile],
     ["Bin JSONL (70–80%)", binFile],

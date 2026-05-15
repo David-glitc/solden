@@ -1,134 +1,100 @@
-// ── worker.ts ─────────────────────────────────────────────────────────────────
-// Hot-loop worker. Runs on Deno · Bun · Node as an ESM Worker.
-//
-// Node      : worker_threads — parentPort for messaging, no `self`
-// Deno/Bun  : Web Worker API — self.onmessage / self.postMessage
-//
-// Node keygen : node:crypto generateKeyPairSync  ~13k kp/s per thread (native C)
-// Deno keygen : node:crypto when available; else crypto.subtle.generateKey (~4k kp/s)
-
+// ── worker.ts — batch keygen + index-scoped vanity match ──────────────────────
 import type { WorkerInit, WorkerMsg } from "./types.ts";
 import { createLogger } from "./log.ts";
+import { b58Encode, b58Pub32 } from "./b58.ts";
+import { createKeygenEngine, subtlePair, type KeygenEngine } from "./keygen.ts";
 
 const log = createLogger("worker");
 
-// ── detect runtime inside worker (no imports from runtime.ts) ─────────────────
-const IS_DENO = typeof (globalThis as any).Deno !== "undefined";
-const IS_BUN  = typeof (globalThis as any).Bun  !== "undefined";
-const IS_NODE = !IS_DENO && !IS_BUN;
+const IS_NODE = typeof (globalThis as any).Deno === "undefined" && typeof (globalThis as any).Bun === "undefined";
 
-// ── Node: import parentPort at module level (ESM — no require) ────────────────
 let parentPort: any = null;
 if (IS_NODE) {
   const wt = await import("node:worker_threads");
   parentPort = wt.parentPort;
 }
 
-// ── crypto: node:crypto fast path (Node, Bun, Deno with Node compat) ──────────
-let nodeCrypto: any = null;
-try {
-  nodeCrypto = await import("node:crypto");
-} catch {
-  nodeCrypto = null;
-}
-
-function useNodeKeygen(): boolean {
-  return nodeCrypto != null && typeof nodeCrypto.generateKeyPairSync === "function";
-}
-
-// ── messaging shim ────────────────────────────────────────────────────────────
 function postMsg(msg: WorkerMsg) {
   if (IS_NODE) parentPort!.postMessage(msg);
-  else         (self as any).postMessage(msg);
-}
-
-// ── inline base58 ─────────────────────────────────────────────────────────────
-const ALPHA = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-function b58(buf: Uint8Array): string {
-  const d: number[] = [0];
-  for (let i = 0; i < buf.length; i++) {
-    let c = buf[i]!;
-    for (let j = 0; j < d.length; j++) { c += d[j]! << 8; d[j] = c % 58; c = (c / 58) | 0; }
-    while (c) { d.push(c % 58); c = (c / 58) | 0; }
-  }
-  let s = "";
-  for (let i = d.length - 1; i >= 0; i--) s += ALPHA[d[i]!];
-  return s;
-}
-
-// ── keypair generators ────────────────────────────────────────────────────────
-function nodePair(): { pub: Uint8Array; secret: Uint8Array } {
-  const { publicKey: pubObj, privateKey: privObj } = nodeCrypto.generateKeyPairSync("ed25519");
-  const pubDer  = pubObj.export({ type: "spki",  format: "der" }) as Uint8Array;
-  const privDer = privObj.export({ type: "pkcs8", format: "der" }) as Uint8Array;
-  const pub32   = new Uint8Array(pubDer.buffer,  pubDer.byteOffset  + pubDer.byteLength  - 32, 32);
-  const seed32  = new Uint8Array(privDer.buffer, privDer.byteOffset + privDer.byteLength - 32, 32);
-  const secret  = new Uint8Array(64);
-  secret.set(seed32); secret.set(pub32, 32);
-  return { pub: new Uint8Array(pub32), secret };
-}
-
-async function denoPair(): Promise<{ pub: Uint8Array; secret: Uint8Array }> {
-  const kp       = await globalThis.crypto.subtle.generateKey({ name: "Ed25519" } as any, true, ["sign", "verify"]) as CryptoKeyPair;
-  const pubSpki  = await globalThis.crypto.subtle.exportKey("spki",  kp.publicKey);
-  const privPkcs = await globalThis.crypto.subtle.exportKey("pkcs8", kp.privateKey);
-  const pub32    = new Uint8Array(pubSpki).slice(-32);
-  const seed32   = new Uint8Array(privPkcs).slice(-32);
-  const secret   = new Uint8Array(64);
-  secret.set(seed32); secret.set(pub32, 32);
-  return { pub: pub32, secret };
+  else (self as any).postMessage(msg);
 }
 
 // ── match state ───────────────────────────────────────────────────────────────
 let pfx = "", sfx = "", pfxLen = 0, sfxLen = 0, total = 0;
-let caseSensitive = false, threshold = 90, workerId = 0;
+let pfxC = new Uint8Array(0);
+let sfxC = new Uint8Array(0);
+let caseSensitive = false;
+let threshold = 90;
+let needScore = true;
+let workerId = 0;
 let progressEvery = 512;
+let detailProgress = true;
 
-/** Single pass: match count, full hit, and score (0–100). */
+function charEq(addr: string, ai: number, patCode: number): boolean {
+  let ac = addr.charCodeAt(ai);
+  if (!caseSensitive && ac >= 65 && ac <= 90) ac += 32;
+  return ac === patCode;
+}
+
 function evalAddr(addr: string): { score: number; hit: boolean } {
   if (total === 0) return { score: 100, hit: true };
-  const al = caseSensitive ? addr : addr.toLowerCase();
   let m = 0;
   let hit = true;
   for (let i = 0; i < pfxLen; i++) {
-    if (al[i] === pfx[i]) m++;
+    if (charEq(addr, i, pfxC[i]!)) m++;
     else hit = false;
   }
-  for (let i = 0; i < sfxLen; i++) {
-    const j = addr.length - sfxLen + i;
-    if (al[j] === sfx[i]) m++;
-    else hit = false;
+  if (sfxLen > 0) {
+    const base = addr.length - sfxLen;
+    for (let i = 0; i < sfxLen; i++) {
+      if (charEq(addr, base + i, sfxC[i]!)) m++;
+      else hit = false;
+    }
   }
+  if (!needScore) return { score: hit ? 100 : 0, hit };
   return { score: Math.round((m / total) * 100), hit };
 }
 
-// ── tight loop ────────────────────────────────────────────────────────────────
 function matchStats(addr: string) {
-  const a = caseSensitive ? addr : addr.toLowerCase();
   let matchedPrefixChars = 0;
   let matchedSuffixChars = 0;
-  for (let i = 0; i < pfxLen; i++) if (a[i] === pfx[i]) matchedPrefixChars++;
-  for (let i = 0; i < sfxLen; i++) if (a[a.length - sfxLen + i] === sfx[i]) matchedSuffixChars++;
+  for (let i = 0; i < pfxLen; i++) if (charEq(addr, i, pfxC[i]!)) matchedPrefixChars++;
+  const sfxBase = sfxLen ? addr.length - sfxLen : 0;
+  for (let i = 0; i < sfxLen; i++) if (charEq(addr, sfxBase + i, sfxC[i]!)) matchedSuffixChars++;
   const matchedTargetChars = matchedPrefixChars + matchedSuffixChars;
   const targetLen = total;
   const accuracyPercent = targetLen ? Math.round((matchedTargetChars / targetLen) * 100) : 100;
 
+  if (!detailProgress) {
+    return {
+      matchedPrefixChars,
+      matchedSuffixChars,
+      matchedTargetChars,
+      targetLen,
+      accuracyPercent,
+      firstMismatchIndex: -1,
+      lastMismatchIndex: -1,
+      bestPrefixWindow: pfxLen ? addr.slice(0, pfxLen) : "",
+      bestSuffixWindow: sfxLen ? addr.slice(sfxBase) : "",
+    };
+  }
+
   let firstMismatchIndex = -1;
   let lastMismatchIndex = -1;
   for (let i = 0; i < pfxLen; i++) {
-    if (a[i] !== pfx[i]) { firstMismatchIndex = i; break; }
+    if (!charEq(addr, i, pfxC[i]!)) { firstMismatchIndex = i; break; }
   }
   if (firstMismatchIndex === -1) {
     for (let i = 0; i < sfxLen; i++) {
-      if (a[a.length - sfxLen + i] !== sfx[i]) { firstMismatchIndex = pfxLen + i; break; }
+      if (!charEq(addr, sfxBase + i, sfxC[i]!)) { firstMismatchIndex = pfxLen + i; break; }
     }
   }
   for (let i = sfxLen - 1; i >= 0; i--) {
-    if (a[a.length - sfxLen + i] !== sfx[i]) { lastMismatchIndex = pfxLen + i; break; }
+    if (!charEq(addr, sfxBase + i, sfxC[i]!)) { lastMismatchIndex = pfxLen + i; break; }
   }
   if (lastMismatchIndex === -1) {
     for (let i = pfxLen - 1; i >= 0; i--) {
-      if (a[i] !== pfx[i]) { lastMismatchIndex = i; break; }
+      if (!charEq(addr, i, pfxC[i]!)) { lastMismatchIndex = i; break; }
     }
   }
   return {
@@ -140,28 +106,104 @@ function matchStats(addr: string) {
     firstMismatchIndex,
     lastMismatchIndex,
     bestPrefixWindow: pfxLen ? addr.slice(0, pfxLen) : "",
-    bestSuffixWindow: sfxLen ? addr.slice(-sfxLen) : "",
+    bestSuffixWindow: sfxLen ? addr.slice(sfxBase) : "",
   };
 }
 
-async function loop() {
-  let checked = 0, t0 = Date.now();
+function emitHitOrThreshold(
+  addr: string,
+  secret: Uint8Array,
+  sc: number,
+  kind: "hit" | "threshold" | "bin",
+) {
+  postMsg({
+    type: kind,
+    workerId,
+    address: addr,
+    publicKey: addr,
+    secretKey: b58Encode(secret),
+    score: kind === "hit" ? 100 : sc,
+  } as WorkerMsg);
+}
+
+function processKey(pubOff: number, pubs: Uint8Array, secrets: Uint8Array, i: number): {
+  addr: string;
+  score: number;
+  hit: boolean;
+} {
+  const addr = b58Pub32(pubs, pubOff);
+  const { score, hit } = evalAddr(addr);
+  if (hit) {
+    emitHitOrThreshold(addr, secrets.subarray(i * 64, i * 64 + 64).slice(), 100, "hit");
+  } else if (score >= threshold) {
+    const snap = secrets.subarray(i * 64, i * 64 + 64).slice();
+    emitHitOrThreshold(addr, snap, score, "threshold");
+    if (score >= 70 && score <= 80) emitHitOrThreshold(addr, snap, score, "bin");
+  }
+  return { addr, score, hit };
+}
+
+function runBatchLoop(engine: KeygenEngine): void {
+  const n = engine.batchSize;
+  const pubs = new Uint8Array(n * 32);
+  const secrets = new Uint8Array(n * 64);
+  let checked = 0;
+  let t0 = Date.now();
   let windowBestScore = -1;
   let windowBestAddr = "";
+
   while (true) {
-    const { pub, secret } = useNodeKeygen() ? nodePair() : await denoPair();
-    const addr = b58(pub);
+    engine.fillBatch(pubs, secrets);
+    for (let i = 0; i < n; i++) {
+      const { addr, score: sc } = processKey(i * 32, pubs, secrets, i);
+      if (sc > windowBestScore) {
+        windowBestScore = sc;
+        windowBestAddr = addr;
+      }
+      checked++;
+      if (checked % progressEvery === 0) {
+        const dt = Math.max(1, Date.now() - t0);
+        const bestAddr = windowBestAddr || addr;
+        postMsg({
+          type: "progress",
+          workerId,
+          rate: Math.round((progressEvery / dt) * 1000),
+          checked,
+          bestAddress: bestAddr,
+          bestScorePercent: windowBestScore < 0 ? sc : windowBestScore,
+          prefixPatternLen: pfxLen,
+          suffixPatternLen: sfxLen,
+          keygenBackend: engine.kind,
+          ...matchStats(bestAddr),
+        } as WorkerMsg);
+        t0 = Date.now();
+        windowBestScore = -1;
+        windowBestAddr = "";
+      }
+    }
+  }
+}
+
+async function runSubtleLoop(): Promise<void> {
+  let checked = 0;
+  let t0 = Date.now();
+  let windowBestScore = -1;
+  let windowBestAddr = "";
+
+  while (true) {
+    const { pub, secret } = await subtlePair();
+    const addr = b58Pub32(pub, 0);
     const { score: sc, hit } = evalAddr(addr);
+
     if (sc > windowBestScore) {
       windowBestScore = sc;
       windowBestAddr = addr;
     }
     checked++;
+
     if (checked % progressEvery === 0) {
-      const now = Date.now();
-      const dt = Math.max(1, now - t0);
+      const dt = Math.max(1, Date.now() - t0);
       const bestAddr = windowBestAddr || addr;
-      const stats = matchStats(bestAddr);
       postMsg({
         type: "progress",
         workerId,
@@ -171,47 +213,72 @@ async function loop() {
         bestScorePercent: windowBestScore < 0 ? sc : windowBestScore,
         prefixPatternLen: pfxLen,
         suffixPatternLen: sfxLen,
-        ...stats,
+        keygenBackend: "subtle",
+        ...matchStats(bestAddr),
       } as WorkerMsg);
-      t0 = now;
+      t0 = Date.now();
       windowBestScore = -1;
       windowBestAddr = "";
     }
-    if (hit) {
-      const pk = b58(pub);
-      const sk = b58(secret);
-      postMsg({ type: "hit", workerId, address: addr, publicKey: pk, secretKey: sk, score: 100 });
-    } else if (sc >= threshold) {
-      const pk = b58(pub);
-      const sk = b58(secret);
-      postMsg({ type: "threshold", workerId, address: addr, publicKey: pk, secretKey: sk, score: sc });
-      if (sc >= 70 && sc <= 80)
-        postMsg({ type: "bin", workerId, address: addr, publicKey: pk, secretKey: sk, score: sc });
+
+    if (hit) emitHitOrThreshold(addr, secret, 100, "hit");
+    else if (sc >= threshold) {
+      emitHitOrThreshold(addr, secret, sc, "threshold");
+      if (sc >= 70 && sc <= 80) emitHitOrThreshold(addr, secret, sc, "bin");
     }
   }
 }
 
-// ── boot ──────────────────────────────────────────────────────────────────────
-function boot(cfg: WorkerInit) {
-  workerId = cfg.workerId; caseSensitive = cfg.caseSensitive; threshold = cfg.threshold;
+async function boot(cfg: WorkerInit) {
+  workerId = cfg.workerId;
+  caseSensitive = cfg.caseSensitive;
+  threshold = cfg.threshold;
   progressEvery = Math.max(64, cfg.progressEvery | 0);
+  detailProgress = progressEvery < 4096;
+  needScore = threshold < 100;
+
   pfx = caseSensitive ? cfg.prefix : cfg.prefix.toLowerCase();
   sfx = caseSensitive ? cfg.suffix : cfg.suffix.toLowerCase();
-  pfxLen = pfx.length; sfxLen = sfx.length; total = pfxLen + sfxLen;
+  pfxLen = pfx.length;
+  sfxLen = sfx.length;
+  total = pfxLen + sfxLen;
+
+  pfxC = new Uint8Array(pfxLen);
+  for (let i = 0; i < pfxLen; i++) pfxC[i] = pfx.charCodeAt(i);
+  sfxC = new Uint8Array(sfxLen);
+  for (let i = 0; i < sfxLen; i++) sfxC[i] = sfx.charCodeAt(i);
+
+  const engine = await createKeygenEngine(cfg.keygen, cfg.keygenBatch ?? 64);
+
   log.debug("worker_boot", {
     workerId,
     prefixLen: pfxLen,
     suffixLen: sfxLen,
+    keygen: engine.kind,
+    keygenBatch: engine.batchSize,
     caseSensitive,
     threshold,
     progressEvery,
+    needScore,
+    detailProgress,
   });
-  loop().catch((e: unknown) => {
+
+  const onFail = (e: unknown) => {
     const message = String(e);
     log.error("worker_loop_failed", { workerId }, e instanceof Error ? e : new Error(message));
     postMsg({ type: "error", message } as any);
-  });
+  };
+
+  if (engine.kind === "subtle") {
+    runSubtleLoop().catch(onFail);
+  } else {
+    try {
+      runBatchLoop(engine);
+    } catch (e) {
+      onFail(e);
+    }
+  }
 }
 
-if (IS_NODE) parentPort!.once("message", boot);
-else         (self as any).onmessage = (ev: MessageEvent<WorkerInit>) => boot(ev.data);
+if (IS_NODE) parentPort!.once("message", (cfg: WorkerInit) => { boot(cfg); });
+else (self as any).onmessage = (ev: MessageEvent<WorkerInit>) => { boot(ev.data); };

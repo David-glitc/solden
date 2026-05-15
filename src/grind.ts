@@ -77,6 +77,8 @@ export async function grind(
       count: opts.count,
       pfxLen: opts.prefix.length,
       sfxLen: opts.suffix.length,
+      keygen: opts.keygen ?? "auto",
+      keygenBatch: opts.keygenBatch ?? 64,
       gpu: gpuCtx.status,
     });
 
@@ -98,6 +100,8 @@ export async function grind(
         threshold:     opts.threshold,
         workerId:      i,
         progressEvery: opts.progressEvery,
+        keygen:        opts.keygen ?? "auto",
+        keygenBatch:   opts.keygenBatch ?? 64,
       };
 
       w.postMessage(payload);

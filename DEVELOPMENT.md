@@ -121,6 +121,22 @@
 - **`static/index.html`:** Header light text; **4 taps** on logo → `/admin.html`; **Near matches** section with copy + keypair; NDJSON/SSE `threshold` lines.
 - **`src/worker.ts`:** Single-pass `evalAddr` (score + hit); defer secret b58 encode until threshold/hit.
 
+## 2026-05-15 — Index-scoped address eval (prefix/suffix chunks only)
+- **`src/worker.ts`:** `evalAddr` / `matchStats` compare only `addr[0..pfxLen)` and `addr[len-sfxLen..len)` via `addrCharEq`; no full-address `toLowerCase()` on the hot path.
+
+## 2026-05-15 — README overhaul + UI Advanced mode (all GrindOpts)
+- **`README.md`:** Full CLI/API/env tables, architecture diagram, performance notes, Advanced mode docs.
+- **`static/index.html`:** Advanced mode toggle + panel (`keygen`, `keygenBatch`, `bunOversubscribe`, `progressEvery`, `uiRefreshMs`, `maxWorkers`, `useWebgpu`, `decryptKey`); `buildGrindBody()`; live `keygenBackend` in throughput card.
+
+## 2026-05-15 — Multi-backend batch keygen (path to ~500k keys/s aggregate)
+- **`src/keygen.ts`:** `auto` → sodium-native → `@noble/ed25519` batch → `node:crypto` → `subtle`.
+- **`src/b58.ts`:** shared `b58Pub32` with offset (no subarray alloc).
+- **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
+- **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
+
+## 2026-05-15 — Worker hot-path acceleration (sync loop, scratch buffers)
+- **`src/worker.ts`:** Node path uses sync `runLoop()` (no `await` per key); `generateKeyPairSync` with DER encoding options; reused `scratchPub`/`scratchSecret` + `b58_32` digit buffer; precomputed `pfxC`/`sfxC`; `publicKey` reuses `address` string; `detailProgress` off when `progressEvery >= 4096`; `needScore` off when `threshold === 100`.
+
 ## 2026-05-14 — `src/` layout; root entry shims
 - **Moved:** application modules to **`src/`** (`main`, `worker`, `grind`, `db`, `crypto`, `log`, `runtime`, `types`, `webgpu_env`, `decrypt`). **Repo root** keeps thin **`main.ts`** / **`decrypt.ts`** that `import "./src/…"` so **`deno run main.ts`**, **`deno task`**, and Deno Deploy default entry stay on familiar paths.
 - **`src/main.ts`:** loads **`../static/index.html`** and **`../static/solden-mark.svg`**. **`deno task check`** typechecks root shims + all **`src/*.ts`**. **`README.md`** layout table updated.

@@ -1,20 +1,26 @@
 {
   "nodeModulesDir": "auto",
   "unstable": ["kv"],
-  "imports": {},
+  "imports": {
+    "@noble/ed25519": "npm:@noble/ed25519@^2.1.0",
+    "@noble/hashes": "npm:@noble/hashes@^1.5.0",
+    "sodium-native": "npm:sodium-native@^4.3.3"
+  },
   "tasks": {
     "start":   "deno run --allow-read --allow-write --allow-net --allow-sys main.ts",
     "server":  "deno run --watch --allow-read --allow-write --allow-net --allow-sys main.ts --server",
     "dev":     "deno run --watch --allow-read --allow-write --allow-net --allow-sys main.ts --server -v",
     "grind":   "deno run --allow-read --allow-write --allow-net main.ts --",
     "grind-gpu": "deno run --allow-read --allow-write --allow-net --unstable-webgpu main.ts -- -W",
-    "grind-fast": "deno run --allow-read --allow-write --allow-net main.ts -- -B 1.25 -g 1024 -u 120",
+    "grind-fast": "deno run --allow-read --allow-write --allow-net main.ts -- -B 1.25 -g 8192 -u 120 -K auto -G 64",
+    "grind-turbo": "deno run --allow-read --allow-write --allow-net main.ts -- -m 64 -B 1.5 -g 16384 -K auto -G 64 -r 100",
+    "bench-keygen": "deno bench --allow-read benchmarks/keygen_backends.bench.ts",
     "bun-grind": "bun main.ts",
     "bun-fast": "bun main.ts -B 1.5 -g 1024 -u 150 -v",
     "server-ui": "deno run --watch --allow-read --allow-write --allow-net --allow-sys main.ts --server",
     "deploy": "deno deploy .",
     "bench":   "deno bench benchmarks/meth_prefix_keygen.bench.ts",
-    "check":   "deno check main.ts decrypt.ts src/main.ts src/admin.ts src/worker.ts src/grind.ts src/db.ts src/decrypt.ts src/runtime.ts src/log.ts src/crypto.ts src/types.ts src/webgpu_env.ts",
+    "check":   "deno check main.ts decrypt.ts src/main.ts src/admin.ts src/worker.ts src/grind.ts src/db.ts src/decrypt.ts src/runtime.ts src/log.ts src/crypto.ts src/types.ts src/webgpu_env.ts src/keygen.ts src/b58.ts",
     "decrypt": "deno run --allow-read decrypt.ts"
   }
 }

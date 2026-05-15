@@ -16,6 +16,10 @@ export interface GrindOpts {
   decryptKey:    string;   // passphrase or 64-char hex AES key; blank = auto
   /** Probe WebGPU when set (`--use-webgpu` / `VANITY_USE_WEBGPU`); Ed25519 grind remains CPU workers. */
   useWebgpu?:    boolean;
+  /** Keygen backend: auto | sodium | noble | node | subtle (`VANITY_KEYGEN`). */
+  keygen?:       string;
+  /** Keys per worker batch before match loop (`VANITY_KEYGEN_BATCH`). */
+  keygenBatch?:  number;
 }
 
 export interface GrindResult {
@@ -35,6 +39,8 @@ export interface WorkerInit {
   threshold:     number;
   workerId:      number;
   progressEvery: number;
+  keygen?:       string;
+  keygenBatch?:  number;
 }
 
 export type WorkerMsg =
@@ -66,6 +72,7 @@ export type WorkerMsg =
     lastMismatchIndex?: number;
     prefixPatternLen?: number;
     suffixPatternLen?: number;
+    keygenBackend?: string;
     runningAvgAccuracyPercent?: number;
     /** Wall-clock keys/s since this HTTP grind started (server). */
     avgKpsWall?: number;
