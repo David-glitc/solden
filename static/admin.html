@@ -165,8 +165,14 @@
       </section>
 
       <section class="card">
-        <h2>Jobs <span class="muted" id="jobsHint"></span></h2>
-        <div id="jobsList"><p class="muted">No jobs yet.</p></div>
+        <div class="row" style="margin-bottom:10px">
+          <h2 style="margin:0">Jobs <span class="muted" id="jobsHint"></span></h2>
+          <span class="grow"></span>
+          <button type="button" class="secondary" id="reloadJobsBtn">Reload jobs</button>
+          <button type="button" class="secondary" id="reconnectStreamBtn">Reconnect stream</button>
+        </div>
+        <p class="muted" id="jobsCountLine">—</p>
+        <div id="jobsList"><p class="muted">No jobs yet — click Reload jobs or wait for stream.</p></div>
       </section>
     </div>
   </div>
@@ -559,10 +565,45 @@
       el.textContent = ago < 2 ? "just now" : ago + "s ago";
     }
 
+    function setJobsCountLine(jobs) {
+      const n = (jobs || []).length;
+      const line = q("jobsCountLine");
+      if (line) line.textContent = n ? n + " job(s) on server" : "0 jobs on server — try Reload jobs";
+    }
+
+    async function reloadJobsManual() {
+      try {
+        let jobs = [];
+        try {
+          const r = await api("/admin/api/jobs/reload", { method: "POST" });
+          jobs = r.jobs || [];
+          toast("Loaded " + (r.count != null ? r.count : jobs.length) + " job(s) from storage");
+        } catch (e1) {
+          jobs = await api("/admin/api/jobs");
+          toast("Loaded " + jobs.length + " job(s)");
+        }
+        renderJobs(jobs);
+        setJobsCountLine(jobs);
+        try {
+          const m = await api("/admin/api/monitor");
+          renderMonitor(m);
+        } catch { /* ignore */ }
+      } catch (e) {
+        toast(e.message || "Reload failed");
+      }
+    }
+
     function onSnapshot(data) {
       updateLastSeen(data.ts);
       if (data.monitor) renderMonitor(data.monitor);
-      if (data.jobs) renderJobs(data.jobs);
+      if (data.jobs) {
+        renderJobs(data.jobs);
+        setJobsCountLine(data.jobs);
+      }
+      if (data.type === "error" && data.error) {
+        setStatus(data.error, false);
+        toast(data.error);
+      }
       const active = (data.jobs || []).some(function(j) { return j.status === "running" || j.status === "queued"; });
       q("jobsHint").textContent = active ? "· " + (data.jobs || []).filter(function(j) { return j.status === "running"; }).length + " running" : "";
       q("livePill").classList.toggle("hidden", !active);
@@ -577,12 +618,17 @@
       const t = token();
       if (!t) return;
       es = new EventSource("/admin/api/stream?token=" + encodeURIComponent(t));
+      es.onopen = function() {
+        void reloadJobsManual();
+      };
       es.onmessage = function(ev) {
         try {
           const data = JSON.parse(ev.data);
           if (data.type === "snapshot") onSnapshot(data);
-          if (data.type === "error") setStatus(data.error, false);
-        } catch { /* ignore */ }
+          else if (data.type === "error") onSnapshot(data);
+        } catch (e) {
+          setStatus("Stream parse error", false);
+        }
       };
       es.onerror = function() {
         setStatus("Reconnecting…", false);
@@ -680,11 +726,16 @@
       }
     });
 
+    q("reloadJobsBtn").onclick = function() { void reloadJobsManual(); };
+    q("reconnectStreamBtn").onclick = function() {
+      startStream();
+      toast("Stream reconnecting");
+    };
+
     if (token()) {
       showApp();
       initCharts();
-      api("/admin/api/monitor").then(function(m) {
-        renderMonitor(m);
+      reloadJobsManual().then(function() {
         startStream();
       }).catch(function(e) {
         toast(e.message);

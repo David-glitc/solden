@@ -26,6 +26,7 @@ import {
   initAdmin,
   isAdminRequest,
   listJobs,
+  reloadJobsFromStore,
   startBackgroundJob,
   verifyAdminPassword,
   type ThresholdCapture,
@@ -872,6 +873,16 @@ async function runServer() {
 
         if (req.method === "GET" && url.pathname === "/admin/api/jobs") {
           return done(Response.json(await listJobs()));
+        }
+
+        if (req.method === "POST" && url.pathname === "/admin/api/jobs/reload") {
+          const result = await reloadJobsFromStore();
+          return done(Response.json({
+            ok: true,
+            count: result.jobs.length,
+            storedCount: result.storedCount,
+            jobs: result.jobs,
+          }));
         }
 
         if (req.method === "GET" && url.pathname === "/admin/api/stream") {

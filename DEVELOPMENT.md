@@ -138,6 +138,10 @@
 - **`src/worker.ts`:** batch loop (`VANITY_KEYGEN`, `VANITY_KEYGEN_BATCH`); progress reports `keygenBackend`.
 - **CLI:** `-K` / `--keygen`, `-G` / `--keygen-batch`; tasks `grind-turbo`, `bench-keygen`; optional npm deps in `package.json`.
 
+## 2026-05-15 — Admin reload jobs + always sync from KV
+- **`src/admin.ts`:** `syncJobsFromStore()` on every `listJobs()` (fixes empty jobs when stream connects on new isolate).
+- **`POST /admin/api/jobs/reload`**, UI **Reload jobs** + **Reconnect stream**; fetch on stream open.
+
 ## 2026-05-15 — Admin memory usage chart (Chart.js)
 - **`static/admin.html`:** Live memory chart (used RAM, process RSS, heap MB) updated from SSE monitor snapshots.
 

@@ -39,7 +39,6 @@ const jobRunners = new Map<string, AbortController>();
 const persistTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 let jobSeq = 0;
-let storeLoaded = false;
 
 function env(name: string): string | undefined {
   if (typeof (globalThis as any).Deno !== "undefined") {
@@ -50,16 +49,21 @@ function env(name: string): string | undefined {
   return undefined;
 }
 
-async function ensureJobsHydrated(): Promise<void> {
-  if (storeLoaded) return;
+/** Merge persisted jobs from KV/SQLite on every list (fixes empty UI after reload / new isolate). */
+async function syncJobsFromStore(): Promise<number> {
   await initAdminJobStore(env("VANITY_DB_PATH") ?? "vanity.db");
   const stored = await listStoredAdminJobs();
+  let merged = 0;
   for (const j of stored) {
+    if (jobs.has(j.id) && jobRunners.has(j.id)) continue;
     const reconciled = reconcileStoredJob(j);
     jobs.set(j.id, reconciled);
-    if (reconciled !== j) void saveAdminJob(reconciled);
+    merged++;
+    if (reconciled.status !== j.status || reconciled.detached !== j.detached) {
+      void saveAdminJob(reconciled);
+    }
   }
-  storeLoaded = true;
+  return merged;
 }
 
 const RECENT_PROGRESS_MS = 15 * 60 * 1000;
@@ -193,12 +197,19 @@ export function applyAdminOpts(base: GrindOpts, perfMode: AdminPerfMode): GrindO
 }
 
 export async function listJobs(): Promise<AdminJob[]> {
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
   return [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** Force re-read all jobs from KV/SQLite (for admin UI reload button). */
+export async function reloadJobsFromStore(): Promise<{ jobs: AdminJob[]; storedCount: number }> {
+  const storedCount = await syncJobsFromStore();
+  const all = [...jobs.values()].sort((a, b) => b.createdAt - a.createdAt);
+  return { jobs: all, storedCount };
+}
+
 export async function getJob(id: string): Promise<AdminJob | undefined> {
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
   return jobs.get(id);
 }
 
@@ -398,7 +409,7 @@ export function cancelJob(id: string): boolean {
 
 /** Remove job from memory; cancels if still active. */
 export async function deleteJob(id: string): Promise<boolean> {
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
   const job = jobs.get(id);
   if (!job) return false;
   if (job.status === "running" || job.status === "queued") cancelJob(id);
@@ -410,7 +421,7 @@ export async function deleteJob(id: string): Promise<boolean> {
 }
 
 export async function deleteFinishedJobs(): Promise<number> {
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
   let n = 0;
   for (const [id, j] of jobs) {
     if (j.status !== "running" && j.status !== "queued") {
@@ -499,7 +510,7 @@ export function adminRequestRestart(): { ok: boolean; message: string } {
 
 /** Prune finished jobs older than maxAgeMs (default 24h). */
 export async function pruneOldJobs(maxAgeMs = 24 * 60 * 60 * 1000): Promise<number> {
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
   const cutoff = Date.now() - maxAgeMs;
   let n = 0;
   for (const [id, j] of jobs) {
@@ -514,5 +525,5 @@ export async function pruneOldJobs(maxAgeMs = 24 * 60 * 60 * 1000): Promise<numb
 
 export async function initAdmin(dbPath = "vanity.db"): Promise<void> {
   await initAdminJobStore(dbPath);
-  await ensureJobsHydrated();
+  await syncJobsFromStore();
 }
